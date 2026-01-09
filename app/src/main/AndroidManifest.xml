@@ -10,24 +10,62 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/Theme.MyTestApplication">
+        
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.activities.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
         <activity
-            android:name=".CreateProjectActivity"
+            android:name=".ui.activities.CreateProjectActivity"
             android:exported="false"
             android:label="新建项目" />
+            
         <activity
-            android:name=".EditProjectActivity"
+            android:name=".ui.activities.EditProjectActivity"
             android:exported="false"
             android:label="编辑项目" />
+            
+        <activity
+            android:name=".ui.activities.OperationActivity"
+            android:exported="false"
+            android:label="操作" />
+            
+        <activity
+            android:name=".ui.activities.ControlPointActivity"
+            android:exported="false"
+            android:label="控制点设置" />
+            
+        <activity
+            android:name=".ui.activities.CreateControlPointActivity"
+            android:exported="false"
+            android:label="新建控制点" />
+            
+        <activity
+            android:name=".ui.activities.EditControlPointActivity"
+            android:exported="false"
+            android:label="编辑控制点" />
+            
+        <activity
+            android:name=".ui.activities.ControlPointImportActivity"
+            android:exported="false"
+            android:label="控制点导入" />
+            
+        <activity
+            android:name=".ui.activities.MeasureActivity"
+            android:exported="false"
+            android:label="测量" />
+            
+        <activity
+            android:name=".ui.activities.DataExportActivity"
+            android:exported="false"
+            android:label="数据导出" />
+            
     </application>
 
 </manifest>
