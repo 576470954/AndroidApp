@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mytestapplication.data.database.AppDatabase
@@ -153,7 +154,8 @@ fun ProjectScreen(projects: List<Project>, projectDao: ProjectDao, modifier: Mod
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(16.dp)
+            .systemBarsPadding(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -167,14 +169,14 @@ fun ProjectScreen(projects: List<Project>, projectDao: ProjectDao, modifier: Mod
                 // Table Header
                 Row(
                     modifier = Modifier
-                        .width(800.dp) // 给一个足够的宽度来触发滚动
+                        .width(800.dp)
                         .background(Color(0xFF2196F3))
                         .border(1.dp, Color.Gray)
                         .height(48.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TableHeaderCell(text = if (currentMode == ScreenMode.NORMAL) "序号" else "选择", width = 80.dp)
-                    VerticalDivider(color = Color.White) // 表头用白色线更清晰
+                    VerticalDivider(color = Color.White)
                     TableHeaderCell(text = "名称", width = 150.dp)
                     VerticalDivider(color = Color.White)
                     TableHeaderCell(text = "管理员", width = 120.dp)
@@ -190,7 +192,7 @@ fun ProjectScreen(projects: List<Project>, projectDao: ProjectDao, modifier: Mod
                         Row(
                             modifier = Modifier
                                 .width(800.dp)
-                                .height(IntrinsicSize.Min) // 关键：让高度自适应以使 VerticalDivider 填充
+                                .height(IntrinsicSize.Min)
                                 .border(1.dp, Color.Gray),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -395,7 +397,7 @@ private suspend fun copyProject(project: Project, projectDao: ProjectDao) {
 }
 
 @Composable
-fun TableHeaderCell(text: String, width: androidx.compose.ui.unit.Dp, textColor: Color = Color.White) {
+fun TableHeaderCell(text: String, width: Dp, textColor: Color = Color.White) {
     Text(
         text = text,
         modifier = Modifier
@@ -411,7 +413,7 @@ fun TableHeaderCell(text: String, width: androidx.compose.ui.unit.Dp, textColor:
 @Composable
 fun FixedTableCell(
     text: String,
-    width: androidx.compose.ui.unit.Dp,
+    width: Dp,
     maxLines: Int = 1,
     modifier: Modifier = Modifier
 ) {

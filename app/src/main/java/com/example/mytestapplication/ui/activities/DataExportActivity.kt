@@ -81,7 +81,8 @@ fun ExportScreen(results: List<MeasurementResultWithControlPoint>, onBack: () ->
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(16.dp)
+            .systemBarsPadding(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("数据导出", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(bottom = 16.dp))

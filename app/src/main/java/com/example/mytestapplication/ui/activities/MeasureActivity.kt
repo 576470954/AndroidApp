@@ -73,7 +73,7 @@ fun MeasureScreen(
     var stationHeight by remember { mutableStateOf("0") }
     var floorNumber by remember { mutableStateOf("1") }
     var pointNumber by remember { mutableStateOf("C1") }
-    var centerPointPairs by remember { mutableStateOf("4") }
+    var centerPointPairs by remember { mutableStateOf("1") }
     var measureCount by remember { mutableStateOf("1") }
 
     // 记录当前楼层已测量的点数进度
@@ -99,7 +99,7 @@ fun MeasureScreen(
     var showPointSettingsDialog by remember { mutableStateOf(false) }
 
     // Center Point Pairs Dropdown
-    val centerPointOptions = listOf("4", "6", "8", "12", "16")
+    val centerPointOptions = listOf("1", "4", "8", "16")
     var centerPointPairsExpanded by remember { mutableStateOf(false) }
 
     // --- DIALOGS ---
@@ -150,7 +150,8 @@ fun MeasureScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
+            .verticalScroll(rememberScrollState())
+            .systemBarsPadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -175,7 +176,9 @@ fun MeasureScreen(
             }
         }
 
-        MeasureInputRow(label = "设备安装高*", value = equipmentHeight, onValueChange = { equipmentHeight = it }, unit = "mm")
+        MeasureInputRow(label = "光源站安装高*", value = equipmentHeight, onValueChange = { equipmentHeight = it }, unit = "mm")
+
+        MeasureInputRow(label = "监测站安装高*", value = stationHeight, onValueChange = { stationHeight = it }, unit = "mm")
 
         // Control Point Row
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -188,8 +191,6 @@ fun MeasureScreen(
                 Text("选择", fontSize = 12.sp, maxLines = 1, softWrap = false) 
             }
         }
-
-        MeasureInputRow(label = "监测站安装高*", value = stationHeight, onValueChange = { stationHeight = it }, unit = "mm")
 
         // Floor Number Row with Settings
         SettingsInputRow(label = "楼层号*", value = floorNumber, onValueChange = { floorNumber = it }, onSettingsClick = { showFloorSettingsDialog = true })
@@ -239,7 +240,7 @@ fun MeasureScreen(
                 onClick = { 
                     // 所有字段校验
                     if (equipmentHeight.isBlank()) {
-                        Toast.makeText(context, "设备安装高不能为空", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "光源站安装高不能为空", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
                     if (selectedPointId == null) {
