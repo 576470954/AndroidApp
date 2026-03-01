@@ -23,5 +23,7 @@ data class MeasurementResult(
     val centerPointPairs: String,
     val rawData: String,
     val centerPointCoordinates: String,
+    val processDetail: String = "",
+    val result: String = "",
     val createTime: Long = System.currentTimeMillis()
 )

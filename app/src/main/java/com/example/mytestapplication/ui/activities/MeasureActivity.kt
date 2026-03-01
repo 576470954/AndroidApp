@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,7 +35,6 @@ import com.example.mytestapplication.data.model.ControlPoint
 import com.example.mytestapplication.data.model.MeasurementResult
 import com.example.mytestapplication.ui.theme.MytestApplicationTheme
 import com.example.mytestapplication.ui.common.VerticalDivider
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.random.Random
@@ -69,81 +73,96 @@ fun MeasureScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    
+    // 基本设置状态
     var equipmentHeight by remember { mutableStateOf("") }
     var stationHeight by remember { mutableStateOf("0") }
     var floorNumber by remember { mutableStateOf("1") }
     var pointNumber by remember { mutableStateOf("C1") }
     var centerPointPairs by remember { mutableStateOf("1") }
-    var measureCount by remember { mutableStateOf("1") }
+    var measureCountInput by remember { mutableStateOf("1") }
 
-    // 记录当前楼层已测量的点数进度
-    var currentFloorProgress by remember { mutableIntStateOf(0) }
+    // 内部参数状态
+    var isInternalExpanded by remember { mutableStateOf(false) }
+    var rangeCalibration by remember { mutableStateOf("0") }
+    var stationCalibrationH by remember { mutableStateOf("0") }
+    var shellWheelbaseCalibration by remember { mutableStateOf("75") }
+    var light2Calibration by remember { mutableStateOf("0") }
+    var deviceWaitTime by remember { mutableStateOf("3") }
+    var collectionCount by remember { mutableStateOf("1") }
+    var miscRemovalCount by remember { mutableStateOf("0") }
+    
+    var isFactoryEditable by remember { mutableStateOf(false) }
+    var showPasswordDialog by remember { mutableStateOf(false) }
 
-    // Control Point Selection
-    var selectedPointId by remember { mutableStateOf<Long?>(null) }
-    var selectedPointName by remember { mutableStateOf("未选择") }
+    // 第一行展示的实时坐标
     var xValue by remember { mutableStateOf("0.000") }
     var yValue by remember { mutableStateOf("0.000") }
     var hValue by remember { mutableStateOf("0.000") }
+    var hLabel by remember { mutableStateOf("H(靶面)") }
+    var hMenuExpanded by remember { mutableStateOf(false) }
+
+    // 控制点选择状态
+    var selectedPointId by remember { mutableStateOf<Long?>(null) }
+    var selectedPointName by remember { mutableStateOf("未选择") }
     var showPointSelector by remember { mutableStateOf(false) }
 
-    // Floor Settings
+    // 步进状态
+    var currentFloorProgress by remember { mutableIntStateOf(0) }
     var floorOrderAsc by remember { mutableStateOf(true) }
     var floorInterval by remember { mutableStateOf("1") }
     var showFloorSettingsDialog by remember { mutableStateOf(false) }
-
-    // Point Settings
     var pointOrderAsc by remember { mutableStateOf(true) }
     var pointInterval by remember { mutableStateOf("1") }
     var pointsPerFloor by remember { mutableStateOf("4") }
     var showPointSettingsDialog by remember { mutableStateOf(false) }
 
-    // Center Point Pairs Dropdown
     val centerPointOptions = listOf("1", "4", "8", "16")
     var centerPointPairsExpanded by remember { mutableStateOf(false) }
 
-    // --- DIALOGS ---
+    // --- 弹窗逻辑 ---
+    if (showPasswordDialog) {
+        var password by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showPasswordDialog = false },
+            title = { Text("输入出厂密码") },
+            text = {
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    label = { Text("密码") }
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (password == "123456") {
+                        isFactoryEditable = true
+                        showPasswordDialog = false
+                    } else {
+                        Toast.makeText(context, "密码错误", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("确定") }
+            }
+        )
+    }
+
     if (showPointSelector) {
-        ControlPointSelectionDialog(
-            points = points,
-            onDismiss = { showPointSelector = false },
-            onPointSelected = { point ->
-                selectedPointId = point.id
-                selectedPointName = point.name
-                xValue = point.x
-                yValue = point.y
-                hValue = point.h
-                showPointSelector = false
-            }
-        )
+        ControlPointSelectionDialog(points, { showPointSelector = false }) { point ->
+            selectedPointId = point.id; selectedPointName = point.name
+            showPointSelector = false
+        }
     }
-
     if (showFloorSettingsDialog) {
-        FloorSettingsDialog(
-            isAscending = floorOrderAsc,
-            interval = floorInterval,
-            onDismiss = { showFloorSettingsDialog = false },
-            onConfirm = { isAsc, newInterval ->
-                floorOrderAsc = isAsc
-                floorInterval = newInterval
-                showFloorSettingsDialog = false
-            }
-        )
+        FloorSettingsDialog(floorOrderAsc, floorInterval, { showFloorSettingsDialog = false }) { isAsc, inv ->
+            floorOrderAsc = isAsc; floorInterval = inv; showFloorSettingsDialog = false
+        }
     }
-
     if (showPointSettingsDialog) {
-        PointSettingsDialog(
-            isAscending = pointOrderAsc,
-            interval = pointInterval,
-            pointsPerFloor = pointsPerFloor,
-            onDismiss = { showPointSettingsDialog = false },
-            onConfirm = { isAsc, newInterval, newPointsPerFloor ->
-                pointOrderAsc = isAsc
-                pointInterval = newInterval
-                pointsPerFloor = newPointsPerFloor
-                showPointSettingsDialog = false
-            }
-        )
+        PointSettingsDialog(pointOrderAsc, pointInterval, pointsPerFloor, { showPointSettingsDialog = false }) { isAsc, inv, perF ->
+            pointOrderAsc = isAsc; pointInterval = inv; pointsPerFloor = perF; showPointSettingsDialog = false
+        }
     }
 
     Column(
@@ -155,18 +174,33 @@ fun MeasureScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(text = "高层放样", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(vertical = 8.dp))
+        Text(text = "高层放样", style = MaterialTheme.typography.headlineMedium)
 
-        // XYZ Table
+        // --- 实时坐标展示表 ---
         Column(modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline)) {
             Row(modifier = Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
-                TableHeaderCell("x", Modifier.weight(1f))
+                TableHeaderCell("X", Modifier.weight(1f))
                 VerticalDivider(color = MaterialTheme.colorScheme.outline)
-                TableHeaderCell("y", Modifier.weight(1f))
+                TableHeaderCell("Y", Modifier.weight(1f))
                 VerticalDivider(color = MaterialTheme.colorScheme.outline)
-                TableHeaderCell("h", Modifier.weight(1f))
+                
+                // H 列表头下拉列表
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Row(
+                        modifier = Modifier.clickable { hMenuExpanded = true },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = hLabel, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
+                    DropdownMenu(expanded = hMenuExpanded, onDismissRequest = { hMenuExpanded = false }) {
+                        listOf("H(靶面)", "H(地面)", "H(墙面)").forEach {
+                            DropdownMenuItem(text = { Text(it) }, onClick = { hLabel = it; hMenuExpanded = false })
+                        }
+                    }
+                }
             }
-            Divider(color = MaterialTheme.colorScheme.outline, thickness = 1.dp)
+            Divider(color = MaterialTheme.colorScheme.outline)
             Row(modifier = Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
                 TableCell(xValue, Modifier.weight(1f))
                 VerticalDivider(color = MaterialTheme.colorScheme.outline)
@@ -176,357 +210,175 @@ fun MeasureScreen(
             }
         }
 
-        MeasureInputRow(label = "光源站安装高*", value = equipmentHeight, onValueChange = { equipmentHeight = it }, unit = "mm")
+        MeasureInputRow("光源站安装高*", equipmentHeight, { equipmentHeight = it }, "mm")
+        MeasureInputRow("监测站安装高*", stationHeight, { stationHeight = it }, "mm")
 
-        MeasureInputRow(label = "监测站安装高*", value = stationHeight, onValueChange = { stationHeight = it }, unit = "mm")
-
-        // Control Point Row
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(text = "控制点*:", modifier = Modifier.width(100.dp), fontSize = 16.sp)
-            Text(text = selectedPointName, modifier = Modifier.weight(1f).border(1.dp, MaterialTheme.colorScheme.outline).clickable { showPointSelector = true }.padding(12.dp), fontSize = 16.sp)
-            Button(
-                onClick = { showPointSelector = true },
-                contentPadding = PaddingValues(horizontal = 8.dp)
-            ) { 
-                Text("选择", fontSize = 12.sp, maxLines = 1, softWrap = false) 
-            }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("控制点*:", Modifier.width(100.dp), fontSize = 16.sp)
+            Text(selectedPointName, Modifier.weight(1f).border(1.dp, MaterialTheme.colorScheme.outline).clickable { showPointSelector = true }.padding(12.dp))
+            Button(onClick = { showPointSelector = true }, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("选择", fontSize = 12.sp) }
         }
 
-        // Floor Number Row with Settings
-        SettingsInputRow(label = "楼层号*", value = floorNumber, onValueChange = { floorNumber = it }, onSettingsClick = { showFloorSettingsDialog = true })
+        SettingsInputRow("楼层号*", floorNumber, { floorNumber = it }, { showFloorSettingsDialog = true })
+        SettingsInputRow("点号*", pointNumber, { pointNumber = it }, { showPointSettingsDialog = true }, KeyboardType.Text)
 
-        // Point Number Row with Settings
-        SettingsInputRow(label = "点号*", value = pointNumber, onValueChange = { pointNumber = it }, keyboardType = KeyboardType.Text, onSettingsClick = { showPointSettingsDialog = true })
-
-        // Center Point Pairs Dropdown
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(text = "中心点对数*:", modifier = Modifier.width(100.dp), fontSize = 16.sp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("中心点对数*:", Modifier.width(100.dp), fontSize = 16.sp)
             ExposedDropdownMenuBox(
                 expanded = centerPointPairsExpanded,
                 onExpandedChange = { centerPointPairsExpanded = !centerPointPairsExpanded },
                 modifier = Modifier.weight(1f)
             ) {
-                OutlinedTextField(
-                    value = centerPointPairs,
-                    onValueChange = {}, 
-                    readOnly = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = centerPointPairsExpanded) },
-                    modifier = Modifier.menuAnchor()
-                )
-                ExposedDropdownMenu(expanded = centerPointPairsExpanded, onDismissRequest = { centerPointPairsExpanded = false }) {
-                    centerPointOptions.forEach {
-                        DropdownMenuItem(
-                            text = { Text(it) }, 
-                            onClick = { centerPointPairs = it; centerPointPairsExpanded = false }
-                        )
-                    }
+                OutlinedTextField(value = centerPointPairs, onValueChange = {}, readOnly = true, 
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = centerPointPairsExpanded) }, modifier = Modifier.menuAnchor())
+                ExposedDropdownMenu(centerPointPairsExpanded, { centerPointPairsExpanded = false }) {
+                    centerPointOptions.forEach { DropdownMenuItem(text = { Text(it) }, onClick = { centerPointPairs = it; centerPointPairsExpanded = false }) }
                 }
             }
-            Spacer(modifier = Modifier.width(68.dp)) // Spacer to align with other rows
+            Spacer(Modifier.width(68.dp))
         }
-        
-        Spacer(modifier = Modifier.weight(1f))
 
-        // Bottom Action Row
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(
-                onClick = onBack, 
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(horizontal = 4.dp)
-            ) { 
-                Text("返回", fontSize = 13.sp, maxLines = 1, softWrap = false) 
+        // --- 内部参数设置 ---
+        Column(modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outlineVariant).padding(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { isInternalExpanded = !isInternalExpanded }.padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("内部参数设置", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Icon(if (isInternalExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null)
             }
-            Button(
-                onClick = { 
-                    // 所有字段校验
-                    if (equipmentHeight.isBlank()) {
-                        Toast.makeText(context, "光源站安装高不能为空", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (selectedPointId == null) {
-                        Toast.makeText(context, "请先选择控制点", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (stationHeight.isBlank()) {
-                        Toast.makeText(context, "监测站安装高不能为空", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (floorNumber.isBlank()) {
-                        Toast.makeText(context, "楼层号不能为空", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (pointNumber.isBlank()) {
-                        Toast.makeText(context, "点号不能为空", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (centerPointPairs.isBlank()) {
-                        Toast.makeText(context, "中心点对数不能为空", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-
-                    // 模拟测量逻辑
-                    Toast.makeText(context, "正在测量 $pointNumber...", Toast.LENGTH_SHORT).show()
+            AnimatedVisibility(visible = isInternalExpanded) {
+                Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MeasureInputRow("测距校准值", rangeCalibration, { rangeCalibration = it }, "mm", enabled = isFactoryEditable)
+                    MeasureInputRow("监测站标定高", stationCalibrationH, { stationCalibrationH = it }, "mm", enabled = isFactoryEditable)
+                    MeasureInputRow("壳体轴距标定", shellWheelbaseCalibration, { shellWheelbaseCalibration = it }, "mm", enabled = isFactoryEditable)
+                    MeasureInputRow("2号光源标定", light2Calibration, { light2Calibration = it }, "mm", enabled = isFactoryEditable)
+                    MeasureInputRow("设备等待时间", deviceWaitTime, { deviceWaitTime = it }, "秒")
+                    MeasureInputRow("采集次数", collectionCount, { collectionCount = it }, null)
+                    MeasureInputRow("杂项去除数", miscRemovalCount, { val v = it.toIntOrNull() ?: 0; if (v < (collectionCount.toIntOrNull() ?: 1)) miscRemovalCount = it }, null)
                     
-                    scope.launch(Dispatchers.IO) {
-                        val count = measureCount.toIntOrNull() ?: 1
-                        repeat(count) {
-                            val randomRawData = List(8) { Random.nextDouble(0.0, 100.0).format(3) }.joinToString(",")
-                            val randomCoords = "${Random.nextDouble(0.0, 1000.0).format(3)},${Random.nextDouble(0.0, 1000.0).format(3)}"
-                            
-                            val result = MeasurementResult(
-                                deviceInstallationHeight = equipmentHeight,
-                                controlPointId = selectedPointId!!,
-                                monitoringStationInstallationHeight = stationHeight,
-                                floorNumber = floorNumber,
-                                pointNumber = pointNumber,
-                                centerPointPairs = centerPointPairs,
-                                rawData = randomRawData,
-                                centerPointCoordinates = randomCoords
-                            )
-                            measurementResultDao.insert(result)
+                    if (!isFactoryEditable) {
+                        Button(onClick = { showPasswordDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("修改出厂标定")
                         }
-                    }
-
-                    val pInterval = pointInterval.toIntOrNull() ?: 1
-                    val fInterval = floorInterval.toIntOrNull() ?: 1
-                    val pMax = pointsPerFloor.toIntOrNull() ?: 4
-                    
-                    currentFloorProgress++
-                    
-                    if (currentFloorProgress >= pMax) {
-                        // 达到每层点数，更新楼层并重置点号
-                        currentFloorProgress = 0
-                        
-                        val currentF = floorNumber.toIntOrNull() ?: 1
-                        val nextF = if (floorOrderAsc) currentF + fInterval else currentF - fInterval
-                        floorNumber = nextF.toString()
-                        
-                        pointNumber = "C1" // 重置为默认点号
                     } else {
-                        // 点号后缀变化
-                        val prefix = pointNumber.takeWhile { !it.isDigit() }
-                        val suffixStr = pointNumber.dropWhile { !it.isDigit() }
-                        val suffix = suffixStr.toIntOrNull() ?: 1
-                        val nextSuffix = if (pointOrderAsc) suffix + pInterval else suffix - pInterval
-                        pointNumber = if (prefix.isEmpty()) nextSuffix.toString() else "$prefix$nextSuffix"
+                        Text("已开启出厂编辑模式", color = Color.Red, fontSize = 12.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
                     }
-                }, 
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(horizontal = 4.dp)
-            ) { 
-                Text("测量", fontSize = 13.sp, maxLines = 1, softWrap = false) 
+                }
             }
-            OutlinedTextField(
-                value = measureCount, 
-                onValueChange = { measureCount = it }, 
-                label = { Text("次数", fontSize = 11.sp) }, 
-                modifier = Modifier.weight(0.7f), 
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), 
-                singleLine = true,
-                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp)
-            )
         }
-    }
-}
 
-fun Double.format(digits: Int) = "%.${digits}f".format(this)
+        Spacer(Modifier.weight(1f))
 
-@Composable
-fun FloorSettingsDialog(
-    isAscending: Boolean,
-    interval: String,
-    onDismiss: () -> Unit,
-    onConfirm: (Boolean, String) -> Unit
-) {
-    var isAsc by remember { mutableStateOf(isAscending) }
-    var currentInterval by remember { mutableStateOf(interval) }
+        BottomActionRow(onBack, {
+            if (equipmentHeight.isBlank() || selectedPointId == null || floorNumber.isBlank() || pointNumber.isBlank()) {
+                Toast.makeText(context, "请填完必填项", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "正在测量 $pointNumber...", Toast.LENGTH_SHORT).show()
+                
+                // 模拟生成测量值
+                xValue = "%.3f".format(Random.nextDouble(0.0, 1000.0))
+                yValue = "%.3f".format(Random.nextDouble(0.0, 1000.0))
+                hValue = "%.3f".format(Random.nextDouble(0.0, 100.0))
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("楼层号设置") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("排序方式", fontWeight = FontWeight.Bold)
-                Row {
-                    Row(Modifier.selectable(selected = isAsc, onClick = { isAsc = true })) {
-                        RadioButton(selected = isAsc, onClick = { isAsc = true })
-                        Text("正序", modifier = Modifier.align(Alignment.CenterVertically))
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Row(Modifier.selectable(selected = !isAsc, onClick = { isAsc = false })) {
-                        RadioButton(selected = !isAsc, onClick = { isAsc = false })
-                        Text("倒序", modifier = Modifier.align(Alignment.CenterVertically))
+                scope.launch(Dispatchers.IO) {
+                    val count = measureCountInput.toIntOrNull() ?: 1
+                    repeat(count) {
+                        val result = MeasurementResult(
+                            deviceInstallationHeight = equipmentHeight,
+                            controlPointId = selectedPointId!!,
+                            monitoringStationInstallationHeight = stationHeight,
+                            floorNumber = floorNumber,
+                            pointNumber = pointNumber,
+                            centerPointPairs = centerPointPairs,
+                            rawData = List(8) { "%.3f".format(Random.nextDouble(0.0, 100.0)) }.joinToString(","),
+                            centerPointCoordinates = "$xValue,$yValue"
+                        )
+                        measurementResultDao.insert(result)
                     }
                 }
-                OutlinedTextField(
-                    value = currentInterval,
-                    onValueChange = { value ->
-                        if (value.isEmpty() || (value.toIntOrNull() in 1..100)) {
-                            currentInterval = value
-                        }
-                    },
-                    label = { Text("间隔层数 (1-100)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-            }
-        },
-        confirmButton = { Button(onClick = { onConfirm(isAsc, currentInterval) }) { Text("确定") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
-}
 
-@Composable
-fun PointSettingsDialog(
-    isAscending: Boolean,
-    interval: String,
-    pointsPerFloor: String,
-    onDismiss: () -> Unit,
-    onConfirm: (Boolean, String, String) -> Unit
-) {
-    var isAsc by remember { mutableStateOf(isAscending) }
-    var currentInterval by remember { mutableStateOf(interval) }
-    var currentPointsPerFloor by remember { mutableStateOf(pointsPerFloor) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("点号设置") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // Order
-                Text("排序方式", fontWeight = FontWeight.Bold)
-                Row {
-                    Row(Modifier.selectable(selected = isAsc, onClick = { isAsc = true })) {
-                        RadioButton(selected = isAsc, onClick = { isAsc = true })
-                        Text("正序", modifier = Modifier.align(Alignment.CenterVertically))
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Row(Modifier.selectable(selected = !isAsc, onClick = { isAsc = false })) {
-                        RadioButton(selected = !isAsc, onClick = { isAsc = false })
-                        Text("倒序", modifier = Modifier.align(Alignment.CenterVertically))
-                    }
-                }
-                // Interval
-                OutlinedTextField(
-                    value = currentInterval,
-                    onValueChange = { value ->
-                        if (value.isEmpty() || (value.toIntOrNull() in 1..10)) {
-                            currentInterval = value
-                        }
-                    },
-                    label = { Text("间隔数 (1-10)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-                // Points per floor
-                OutlinedTextField(
-                    value = currentPointsPerFloor,
-                    onValueChange = { currentPointsPerFloor = it },
-                    label = { Text("每层几个点") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                )
-            }
-        },
-        confirmButton = { Button(onClick = { onConfirm(isAsc, currentInterval, currentPointsPerFloor) }) { Text("确定") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
-}
-
-@Composable
-fun ControlPointSelectionDialog(
-    points: List<ControlPoint>,
-    onDismiss: () -> Unit,
-    onPointSelected: (ControlPoint) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("选择控制点") },
-        text = {
-            Box(modifier = Modifier.heightIn(max = 400.dp)) {
-                LazyColumn {
-                    items(points) { point ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onPointSelected(point) }
-                                .padding(vertical = 8.dp)
-                        ) {
-                            Text(text = point.name, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                            Text(text = "x:${point.x}  y:${point.y}  h:${point.h}", fontSize = 12.sp, color = Color.Gray)
-                            Divider(modifier = Modifier.padding(top = 8.dp))
-                        }
-                    }
+                currentFloorProgress++
+                if (currentFloorProgress >= (pointsPerFloor.toIntOrNull() ?: 4)) {
+                    currentFloorProgress = 0
+                    val nextF = (floorNumber.toIntOrNull() ?: 1) + (if (floorOrderAsc) 1 else -1) * (floorInterval.toIntOrNull() ?: 1)
+                    floorNumber = nextF.toString()
+                    pointNumber = "C1"
+                } else {
+                    val prefix = pointNumber.takeWhile { !it.isDigit() }
+                    val suffix = (pointNumber.dropWhile { !it.isDigit() }.toIntOrNull() ?: 1) + (if (pointOrderAsc) 1 else -1) * (pointInterval.toIntOrNull() ?: 1)
+                    pointNumber = "$prefix$suffix"
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
-}
-
-@Composable
-fun SettingsInputRow(
-    label: String, 
-    value: String, 
-    onValueChange: (String) -> Unit, 
-    onSettingsClick: () -> Unit,
-    keyboardType: KeyboardType = KeyboardType.Number
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(text = "$label:", modifier = Modifier.width(100.dp), fontSize = 16.sp)
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.weight(1f),
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-            singleLine = true
-        )
-        Button(
-            onClick = onSettingsClick, 
-            modifier = Modifier.height(56.dp),
-            contentPadding = PaddingValues(horizontal = 8.dp)
-        ) {
-            Text("设置", fontSize = 12.sp, maxLines = 1, softWrap = false)
-        }
+        }, measureCountInput, { measureCountInput = it })
     }
 }
 
 @Composable
-fun MeasureInputRow(
-    label: String, 
-    value: String, 
-    onValueChange: (String) -> Unit, 
-    unit: String? = null,
-    keyboardType: KeyboardType = KeyboardType.Number
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(text = "$label:", modifier = Modifier.width(100.dp), fontSize = 16.sp)
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.weight(1f),
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-            singleLine = true
-        )
-        if (unit != null) {
-            Text(text = unit, modifier = Modifier.width(68.dp), fontSize = 16.sp, textAlign = TextAlign.Center)
-        } else {
-            Spacer(modifier = Modifier.width(68.dp))
-        }
+fun MeasureInputRow(label: String, value: String, onValueChange: (String) -> Unit, unit: String? = null, enabled: Boolean = true, kbType: KeyboardType = KeyboardType.Number) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("$label:", Modifier.width(100.dp), fontSize = 14.sp)
+        OutlinedTextField(value, onValueChange, Modifier.weight(1f), enabled = enabled, keyboardOptions = KeyboardOptions(keyboardType = kbType), singleLine = true, textStyle = LocalTextStyle.current.copy(fontSize = 14.sp))
+        unit?.let { Text(it, Modifier.width(40.dp), fontSize = 14.sp) } ?: Spacer(Modifier.width(40.dp))
     }
 }
 
 @Composable
-fun TableHeaderCell(text: String, modifier: Modifier = Modifier) {
-    Text(text = text, modifier = modifier, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, fontSize = 16.sp)
+fun BottomActionRow(onBack: () -> Unit, onMeasure: () -> Unit, count: String, onCountChange: (String) -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Button(onBack, Modifier.weight(1f)) { Text("返回") }
+        Button(onMeasure, Modifier.weight(1f)) { Text("测量") }
+        OutlinedTextField(count, onCountChange, Modifier.weight(0.7f), label = { Text("次数", fontSize = 11.sp) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+    }
 }
 
 @Composable
-fun TableCell(text: String, modifier: Modifier = Modifier) {
-    Text(text = text, modifier = modifier, textAlign = TextAlign.Center, fontSize = 14.sp)
+fun SettingsInputRow(label: String, value: String, onValueChange: (String) -> Unit, onClick: () -> Unit, kbType: KeyboardType = KeyboardType.Number) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("$label:", Modifier.width(100.dp), fontSize = 14.sp)
+        OutlinedTextField(value, onValueChange, Modifier.weight(1f), keyboardOptions = KeyboardOptions(keyboardType = kbType), singleLine = true)
+        Button(onClick, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("设置", fontSize = 12.sp) }
+    }
+}
+
+@Composable
+fun TableHeaderCell(text: String, modifier: Modifier) = Text(text, modifier, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+@Composable
+fun TableCell(text: String, modifier: Modifier) = Text(text, modifier, textAlign = TextAlign.Center, fontSize = 14.sp)
+
+@Composable
+fun ControlPointSelectionDialog(points: List<ControlPoint>, onDismiss: () -> Unit, onSelect: (ControlPoint) -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("选择控制点") }, text = {
+        Box(Modifier.heightIn(max = 400.dp)) {
+            LazyColumn { items(points) { p ->
+                Column(Modifier.fillMaxWidth().clickable { onSelect(p) }.padding(8.dp)) {
+                    Text(p.name, fontWeight = FontWeight.Bold)
+                    Text("x:${p.x} y:${p.y} h:${p.h}", fontSize = 12.sp, color = Color.Gray); Divider()
+                }
+            }}
+        }
+    }, confirmButton = { TextButton(onDismiss) { Text("取消") } })
+}
+
+@Composable
+fun FloorSettingsDialog(isAsc: Boolean, inv: String, onDismiss: () -> Unit, onConfirm: (Boolean, String) -> Unit) {
+    var asc by remember { mutableStateOf(isAsc) }; var i by remember { mutableStateOf(inv) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("楼层号设置") }, text = {
+        Column {
+            Row { RadioButton(asc, { asc = true }); Text("正序", Modifier.align(Alignment.CenterVertically)); Spacer(Modifier.width(8.dp)); RadioButton(!asc, { asc = false }); Text("倒序", Modifier.align(Alignment.CenterVertically)) }
+            OutlinedTextField(i, { i = it }, label = { Text("间隔") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        }
+    }, confirmButton = { Button({ onConfirm(asc, i) }) { Text("确定") } })
+}
+
+@Composable
+fun PointSettingsDialog(isAsc: Boolean, inv: String, perF: String, onDismiss: () -> Unit, onConfirm: (Boolean, String, String) -> Unit) {
+    var asc by remember { mutableStateOf(isAsc) }; var i by remember { mutableStateOf(inv) }; var p by remember { mutableStateOf(perF) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("点号设置") }, text = {
+        Column {
+            Row { RadioButton(asc, { asc = true }); Text("正序", Modifier.align(Alignment.CenterVertically)); Spacer(Modifier.width(8.dp)); RadioButton(!asc, { asc = false }); Text("倒序", Modifier.align(Alignment.CenterVertically)) }
+            OutlinedTextField(i, { i = it }, label = { Text("间隔") }); OutlinedTextField(p, { p = it }, label = { Text("每层点数") })
+        }
+    }, confirmButton = { Button({ onConfirm(asc, i, p) }) { Text("确定") } })
 }

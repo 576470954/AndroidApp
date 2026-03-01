@@ -8,7 +8,7 @@ import com.example.mytestapplication.data.model.Project
 import com.example.mytestapplication.data.model.ControlPoint
 import com.example.mytestapplication.data.model.MeasurementResult
 
-@Database(entities = [Project::class, ControlPoint::class, MeasurementResult::class], version = 5, exportSchema = false)
+@Database(entities = [Project::class, ControlPoint::class, MeasurementResult::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun projectDao(): ProjectDao
     abstract fun controlPointDao(): ControlPointDao

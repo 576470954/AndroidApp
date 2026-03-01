@@ -166,24 +166,37 @@ fun ExportScreen(results: List<MeasurementResultWithControlPoint>, onBack: () ->
             Button(onClick = onBack, modifier = Modifier.weight(1f)) {
                 Text("返回")
             }
+            
+            // 结果导出按钮
             Button(
                 onClick = { 
                     if (selectedIds.isEmpty()) {
                         Toast.makeText(context, "请选择要导出的数据", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
-                    if (selectedFolderUri == null && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                         Toast.makeText(context, "请选择导出目录", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-
                     scope.launch {
-                        exportData(context, results.filter { selectedIds.contains(it.measurementResult.id) }, fileSdf)
+                        exportData(context, results.filter { selectedIds.contains(it.measurementResult.id) }, fileSdf, isDetail = false)
                     }
                 }, 
                 modifier = Modifier.weight(1f)
             ) {
-                Text("导出")
+                Text("结果导出")
+            }
+
+            // 详情导出按钮
+            Button(
+                onClick = { 
+                    if (selectedIds.isEmpty()) {
+                        Toast.makeText(context, "请选择要导出的数据", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    scope.launch {
+                        exportData(context, results.filter { selectedIds.contains(it.measurementResult.id) }, fileSdf, isDetail = true)
+                    }
+                }, 
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("详情导出")
             }
         }
     }
@@ -192,10 +205,18 @@ fun ExportScreen(results: List<MeasurementResultWithControlPoint>, onBack: () ->
 private suspend fun exportData(
     context: android.content.Context,
     dataToExport: List<MeasurementResultWithControlPoint>,
-    fileSdf: SimpleDateFormat
+    fileSdf: SimpleDateFormat,
+    isDetail: Boolean
 ) {
-    val fileName = "Export_${fileSdf.format(Date())}.csv"
-    val header = "设备安装高,控制点名称,控制点X,控制点Y,控制点H,监测站安装高,楼层号,点号,中心点对数,原始数据,中心点坐标,创建时间\n"
+    val prefix = if (isDetail) "Detail" else "Result"
+    val fileName = "${prefix}_${fileSdf.format(Date())}.csv"
+    
+    val header = if (isDetail) {
+        "设备安装高,控制点名称,X,Y,H,监测站安装高,楼层号,点号,中心点对数,原始数据,计算过程详情,创建时间\n"
+    } else {
+        "设备安装高,控制点名称,X,Y,H,监测站安装高,楼层号,点号,中心点对数,创建时间\n"
+    }
+    
     val content = StringBuilder(header)
     val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
@@ -207,8 +228,16 @@ private suspend fun exportData(
         content.append("${item.measurementResult.floorNumber},")
         content.append("${item.measurementResult.pointNumber},")
         content.append("${item.measurementResult.centerPointPairs},")
-        content.append("\"${item.measurementResult.rawData}\",") // Enclose raw data in quotes
-        content.append("\"${item.measurementResult.centerPointCoordinates}\",")
+        
+        if (isDetail) {
+            content.append("\"${item.measurementResult.rawData}\",")
+            content.append("\"${item.measurementResult.centerPointCoordinates}\",")
+            content.append("\"${item.measurementResult.processDetail}\",") // JSON
+            content.append("\"${item.measurementResult.result}\",") // JSON
+        } else {
+            content.append("\"${item.measurementResult.result}\",") // 仅结果
+        }
+
         content.append("${sdf.format(Date(item.measurementResult.createTime))}\n")
     }
 
