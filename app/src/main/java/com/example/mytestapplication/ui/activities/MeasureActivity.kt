@@ -37,6 +37,8 @@ import com.example.mytestapplication.ui.theme.MytestApplicationTheme
 import com.example.mytestapplication.ui.common.VerticalDivider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlin.math.asin
+import kotlin.math.tan
 import kotlin.random.Random
 
 class MeasureActivity : ComponentActivity() {
@@ -75,7 +77,7 @@ fun MeasureScreen(
     val scope = rememberCoroutineScope()
     
     // 基本设置状态
-    var equipmentHeight by remember { mutableStateOf("") }
+    var equipmentHeight by remember { mutableStateOf("75") } // 默认值设为 75
     var stationHeight by remember { mutableStateOf("0") }
     var floorNumber by remember { mutableStateOf("1") }
     var pointNumber by remember { mutableStateOf("C1") }
@@ -98,14 +100,35 @@ fun MeasureScreen(
     // 第一行展示的实时坐标
     var xValue by remember { mutableStateOf("0.000") }
     var yValue by remember { mutableStateOf("0.000") }
-    var hValue by remember { mutableStateOf("0.000") }
     var hLabel by remember { mutableStateOf("H(靶面)") }
     var hMenuExpanded by remember { mutableStateOf(false) }
-
+    
     // 控制点选择状态
     var selectedPointId by remember { mutableStateOf<Long?>(null) }
     var selectedPointName by remember { mutableStateOf("未选择") }
+    var selectedPointH by remember { mutableStateOf(0.0) } // 控制点 H (作为测距数)
     var showPointSelector by remember { mutableStateOf(false) }
+
+    // 根据公式计算显示的 H 值
+    val hValueDisplay = remember(hLabel, equipmentHeight, stationHeight, selectedPointH, rangeCalibration, stationCalibrationH, shellWheelbaseCalibration, light2Calibration) {
+        val eqH = equipmentHeight.toDoubleOrNull() ?: 0.0
+        val swC = shellWheelbaseCalibration.toDoubleOrNull() ?: 0.0
+        val eqHReal = calculateEquipmentHeightOriginal(swC, eqH)
+        val stH = stationHeight.toDoubleOrNull() ?: 0.0
+        val rCal = rangeCalibration.toDoubleOrNull() ?: 0.0
+        val sCalH = stationCalibrationH.toDoubleOrNull() ?: 0.0
+        val l2Cal = light2Calibration.toDoubleOrNull() ?: 0.0
+        
+        // 靶面高程 = 光源站安装高度 + 控制点 H (作为测距数) + 测距校准值 + 监测站标定高
+        val targetH = eqHReal + selectedPointH + rCal + sCalH
+        
+        val result = when (hLabel) {
+            "H(地面)" -> targetH - stH
+            "H(墙面)" -> targetH + l2Cal
+            else -> targetH // H(靶面)
+        }
+        "%.3f".format(result)
+    }
 
     // 步进状态
     var currentFloorProgress by remember { mutableIntStateOf(0) }
@@ -150,7 +173,9 @@ fun MeasureScreen(
 
     if (showPointSelector) {
         ControlPointSelectionDialog(points, { showPointSelector = false }) { point ->
-            selectedPointId = point.id; selectedPointName = point.name
+            selectedPointId = point.id
+            selectedPointName = point.name
+            selectedPointH = point.h.toDoubleOrNull() ?: 0.0
             showPointSelector = false
         }
     }
@@ -184,7 +209,6 @@ fun MeasureScreen(
                 TableHeaderCell("Y", Modifier.weight(1f))
                 VerticalDivider(color = MaterialTheme.colorScheme.outline)
                 
-                // H 列表头下拉列表
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Row(
                         modifier = Modifier.clickable { hMenuExpanded = true },
@@ -206,11 +230,21 @@ fun MeasureScreen(
                 VerticalDivider(color = MaterialTheme.colorScheme.outline)
                 TableCell(yValue, Modifier.weight(1f))
                 VerticalDivider(color = MaterialTheme.colorScheme.outline)
-                TableCell(hValue, Modifier.weight(1f))
+                TableCell(hValueDisplay, Modifier.weight(1f))
             }
         }
 
-        MeasureInputRow("光源站安装高*", equipmentHeight, { equipmentHeight = it }, "mm")
+        // 光源站安装高修改校验
+        MeasureInputRow("光源站安装高*", equipmentHeight, { newValue ->
+            val newEqH = newValue.toDoubleOrNull()
+            val currentL = shellWheelbaseCalibration.toDoubleOrNull() ?: 0.0
+            if (newEqH != null && newEqH < currentL) {
+                Toast.makeText(context, "光源站安装高不能小于壳体轴距标定值", Toast.LENGTH_SHORT).show()
+            } else {
+                equipmentHeight = newValue
+            }
+        }, "mm")
+
         MeasureInputRow("监测站安装高*", stationHeight, { stationHeight = it }, "mm")
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -252,7 +286,18 @@ fun MeasureScreen(
                 Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     MeasureInputRow("测距校准值", rangeCalibration, { rangeCalibration = it }, "mm", enabled = isFactoryEditable)
                     MeasureInputRow("监测站标定高", stationCalibrationH, { stationCalibrationH = it }, "mm", enabled = isFactoryEditable)
-                    MeasureInputRow("壳体轴距标定", shellWheelbaseCalibration, { shellWheelbaseCalibration = it }, "mm", enabled = isFactoryEditable)
+                    
+                    // 壳体轴距标定修改校验
+                    MeasureInputRow("壳体轴距标定", shellWheelbaseCalibration, { newValue ->
+                        val newL = newValue.toDoubleOrNull()
+                        val currentEqH = equipmentHeight.toDoubleOrNull() ?: 0.0
+                        if (newL != null && newL > currentEqH) {
+                            Toast.makeText(context, "壳体轴距标定不能大于光源站安装高", Toast.LENGTH_SHORT).show()
+                        } else {
+                            shellWheelbaseCalibration = newValue
+                        }
+                    }, "mm", enabled = isFactoryEditable)
+
                     MeasureInputRow("2号光源标定", light2Calibration, { light2Calibration = it }, "mm", enabled = isFactoryEditable)
                     MeasureInputRow("设备等待时间", deviceWaitTime, { deviceWaitTime = it }, "秒")
                     MeasureInputRow("采集次数", collectionCount, { collectionCount = it }, null)
@@ -277,10 +322,8 @@ fun MeasureScreen(
             } else {
                 Toast.makeText(context, "正在测量 $pointNumber...", Toast.LENGTH_SHORT).show()
                 
-                // 模拟生成测量值
                 xValue = "%.3f".format(Random.nextDouble(0.0, 1000.0))
                 yValue = "%.3f".format(Random.nextDouble(0.0, 1000.0))
-                hValue = "%.3f".format(Random.nextDouble(0.0, 100.0))
 
                 scope.launch(Dispatchers.IO) {
                     val count = measureCountInput.toIntOrNull() ?: 1
@@ -381,4 +424,23 @@ fun PointSettingsDialog(isAsc: Boolean, inv: String, perF: String, onDismiss: ()
             OutlinedTextField(i, { i = it }, label = { Text("间隔") }); OutlinedTextField(p, { p = it }, label = { Text("每层点数") })
         }
     }, confirmButton = { Button({ onConfirm(asc, i, p) }) { Text("确定") } })
+}
+
+fun calculateEquipmentHeightOriginal(shellWheelbaseCalibration: Double, equipmentHeight: Double): Double {
+    // 避免除以0或无效数值导致 asin 崩溃
+    if (shellWheelbaseCalibration <= 0 || equipmentHeight <= shellWheelbaseCalibration) {
+        return 0.0
+    }
+    
+    val ratio = shellWheelbaseCalibration / equipmentHeight
+    // asin 的参数必须在 [-1, 1] 之间
+    if (ratio > 1.0) return 0.0
+    
+    val theta = asin(ratio)
+    val tanTheta = tan(theta)
+    
+    // 避免 tanTheta 为 0
+    if (tanTheta == 0.0) return 0.0
+    
+    return shellWheelbaseCalibration / tanTheta
 }
