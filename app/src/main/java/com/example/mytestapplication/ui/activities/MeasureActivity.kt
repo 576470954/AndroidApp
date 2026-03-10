@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,14 +31,19 @@ import androidx.compose.ui.unit.sp
 import com.example.mytestapplication.data.database.AppDatabase
 import com.example.mytestapplication.data.database.MeasurementResultDao
 import com.example.mytestapplication.data.model.ControlPoint
+import com.example.mytestapplication.data.model.MeasureState
 import com.example.mytestapplication.data.model.MeasurementResult
+import com.example.mytestapplication.network.Device
+import com.example.mytestapplication.network.PointCoord
 import com.example.mytestapplication.ui.theme.MytestApplicationTheme
 import com.example.mytestapplication.ui.common.VerticalDivider
+import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.asin
 import kotlin.math.tan
-import kotlin.random.Random
 
 class MeasureActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,7 +60,7 @@ class MeasureActivity : ComponentActivity() {
                 ) {
                     val points by controlPointDao.getAllControlPoints().collectAsState(initial = emptyList())
                     MeasureScreen(
-                        points = points, 
+                        points = points,
                         onBack = { finish() },
                         measurementResultDao = measurementResultDao
                     )
@@ -69,15 +73,28 @@ class MeasureActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MeasureScreen(
-    points: List<ControlPoint>, 
+    points: List<ControlPoint>,
     onBack: () -> Unit,
     measurementResultDao: MeasurementResultDao
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    
+
+    // 监听所有测量结果
+    val allResults by measurementResultDao.getAllResults().collectAsState(initial = emptyList())
+
+    // 记录当前会话的测量 ID，初始为 null（即重置状态）
+    var currentSessionMeasureId by remember { mutableStateOf<Long?>(null) }
+
+    // 设备设置状态
+    var deviceBaseUrl by remember { mutableStateOf("http://192.168.1.149:8000") }
+    val device = remember(deviceBaseUrl) { Device(deviceBaseUrl) }
+    var showDeviceSettings by remember { mutableStateOf(false) }
+    var deviceStateMessage by remember { mutableStateOf("") }
+    var showStateDialog by remember { mutableStateOf(false) }
+
     // 基本设置状态
-    var equipmentHeight by remember { mutableStateOf("75") } // 默认值设为 75
+    var equipmentHeight by remember { mutableStateOf("75") }
     var stationHeight by remember { mutableStateOf("0") }
     var floorNumber by remember { mutableStateOf("1") }
     var pointNumber by remember { mutableStateOf("C1") }
@@ -93,20 +110,46 @@ fun MeasureScreen(
     var deviceWaitTime by remember { mutableStateOf("3") }
     var collectionCount by remember { mutableStateOf("1") }
     var miscRemovalCount by remember { mutableStateOf("0") }
-    
+
     var isFactoryEditable by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
 
     // 第一行展示的实时坐标
-    var xValue by remember { mutableStateOf("0.000") }
-    var yValue by remember { mutableStateOf("0.000") }
+    var xValue by remember { mutableStateOf("") }
+    var yValue by remember { mutableStateOf("") }
     var hLabel by remember { mutableStateOf("H(靶面)") }
     var hMenuExpanded by remember { mutableStateOf(false) }
-    
+
+    // 监听测量结果，仅处理当前会话的任务
+    LaunchedEffect(allResults, currentSessionMeasureId) {
+        if (currentSessionMeasureId == null) {
+            xValue = ""
+            yValue = ""
+            return@LaunchedEffect
+        }
+
+        val currentTask = allResults.find { it.measureId == currentSessionMeasureId }
+        if (currentTask != null) {
+            if (currentTask.state == MeasureState.COMPLETED && currentTask.result.isNotBlank()) {
+                try {
+                    val coord = Gson().fromJson(currentTask.result, PointCoord::class.java)
+                    if (coord != null) {
+                        xValue = "%.3f".format(coord.x)
+                        yValue = "%.3f".format(coord.y)
+                    }
+                } catch (e: Exception) {
+                    xValue = ""; yValue = ""
+                }
+            } else if (currentTask.state == MeasureState.MEASURING) {
+                xValue = ""; yValue = ""
+            }
+        }
+    }
+
     // 控制点选择状态
     var selectedPointId by remember { mutableStateOf<Long?>(null) }
     var selectedPointName by remember { mutableStateOf("未选择") }
-    var selectedPointH by remember { mutableStateOf(0.0) } // 控制点 H (作为测距数)
+    var selectedPointH by remember { mutableDoubleStateOf(0.0) }
     var showPointSelector by remember { mutableStateOf(false) }
 
     // 根据公式计算显示的 H 值
@@ -118,14 +161,13 @@ fun MeasureScreen(
         val rCal = rangeCalibration.toDoubleOrNull() ?: 0.0
         val sCalH = stationCalibrationH.toDoubleOrNull() ?: 0.0
         val l2Cal = light2Calibration.toDoubleOrNull() ?: 0.0
-        
-        // 靶面高程 = 光源站安装高度 + 控制点 H (作为测距数) + 测距校准值 + 监测站标定高
+
         val targetH = eqHReal + selectedPointH + rCal + sCalH
-        
+
         val result = when (hLabel) {
             "H(地面)" -> targetH - stH
             "H(墙面)" -> targetH + l2Cal
-            else -> targetH // H(靶面)
+            else -> targetH
         }
         "%.3f".format(result)
     }
@@ -140,10 +182,97 @@ fun MeasureScreen(
     var pointsPerFloor by remember { mutableStateOf("4") }
     var showPointSettingsDialog by remember { mutableStateOf(false) }
 
-    val centerPointOptions = listOf("1", "4", "8", "16")
+    val centerPointOptions = listOf("1", "4", "8")
     var centerPointPairsExpanded by remember { mutableStateOf(false) }
 
     // --- 弹窗逻辑 ---
+    if (showStateDialog) {
+        AlertDialog(
+            onDismissRequest = { showStateDialog = false },
+            title = { Text("设备状态") },
+            text = { Text(deviceStateMessage) },
+            confirmButton = { Button(onClick = { showStateDialog = false }) { Text("确定") } }
+        )
+    }
+
+    if (showDeviceSettings) {
+        DeviceSettingsDialog(
+            currentUrl = deviceBaseUrl,
+            onUrlSave = { deviceBaseUrl = it },
+            onGetState = {
+                scope.launch {
+                    val resp = device.getCurrentState()
+                    if (resp.status != "success" ) {
+                        deviceStateMessage = "请求失败：${resp.message ?: "未知"}"
+                    } else if (resp.data?.isMeasuring != 0) {
+                        deviceStateMessage = "设备测量中"
+                    } else {
+                        deviceStateMessage = "设备状态正常，未开启测量"
+                    }
+                    showStateDialog = true
+                }
+            },
+            onCancelMeasure = {
+                scope.launch {
+                    val activeResults = withContext(Dispatchers.IO) {
+                        measurementResultDao.getAllResults().first().find { it.state == MeasureState.MEASURING }
+                    }
+                    if (activeResults != null) {
+                        val resp = device.cancelMeasure(activeResults.measureId)
+                        if (resp.status == "success") {
+                            withContext(Dispatchers.IO) {
+                                measurementResultDao.updateState(activeResults.id, MeasureState.FAILED)
+                            }
+                            Toast.makeText(context, "已取消测量", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "取消失败: ${resp.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(context, "当前没有测量中的任务", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onDrawResult = {
+                val currentTask = allResults.find { it.measureId == currentSessionMeasureId }
+                if (currentTask == null) {
+                    Toast.makeText(context, "当前会话暂无测量记录", Toast.LENGTH_SHORT).show()
+                    return@DeviceSettingsDialog
+                }
+                when (currentTask.state) {
+                    MeasureState.COMPLETED -> {
+                        if (currentTask.result.isNotBlank()) {
+                            try {
+                                val coord = Gson().fromJson(currentTask.result, PointCoord::class.java)
+                                if (coord != null) {
+                                    scope.launch {
+                                        val resp = device.drawCircle(
+                                            x = coord.x.toInt(),
+                                            y = coord.y.toInt(),
+                                            radius = 50,
+                                            color = "RED"
+                                        )
+                                        Toast.makeText(context, if (resp.status == "success") "绘制命令已发送" else "绘制失败: ${resp.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    Toast.makeText(context, "结果格式错误", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "解析结果失败", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "测量结果为空", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    MeasureState.MEASURING -> Toast.makeText(context, "测量正在进行中，请稍候", Toast.LENGTH_SHORT).show()
+                    MeasureState.FAILED -> Toast.makeText(context, "测量已失败，无法绘制", Toast.LENGTH_SHORT).show()
+                    MeasureState.TIMEOUT -> Toast.makeText(context, "测量超时，无法绘制", Toast.LENGTH_SHORT).show()
+                    else -> Toast.makeText(context, "测量未开始或状态未知", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = { showDeviceSettings = false }
+        )
+    }
+
     if (showPasswordDialog) {
         var password by remember { mutableStateOf("") }
         AlertDialog(
@@ -208,7 +337,7 @@ fun MeasureScreen(
                 VerticalDivider(color = MaterialTheme.colorScheme.outline)
                 TableHeaderCell("Y", Modifier.weight(1f))
                 VerticalDivider(color = MaterialTheme.colorScheme.outline)
-                
+
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                     Row(
                         modifier = Modifier.clickable { hMenuExpanded = true },
@@ -224,7 +353,7 @@ fun MeasureScreen(
                     }
                 }
             }
-            Divider(color = MaterialTheme.colorScheme.outline)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             Row(modifier = Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
                 TableCell(xValue, Modifier.weight(1f))
                 VerticalDivider(color = MaterialTheme.colorScheme.outline)
@@ -234,7 +363,6 @@ fun MeasureScreen(
             }
         }
 
-        // 光源站安装高修改校验
         MeasureInputRow("光源站安装高*", equipmentHeight, { newValue ->
             val newEqH = newValue.toDoubleOrNull()
             val currentL = shellWheelbaseCalibration.toDoubleOrNull() ?: 0.0
@@ -263,9 +391,9 @@ fun MeasureScreen(
                 onExpandedChange = { centerPointPairsExpanded = !centerPointPairsExpanded },
                 modifier = Modifier.weight(1f)
             ) {
-                OutlinedTextField(value = centerPointPairs, onValueChange = {}, readOnly = true, 
+                OutlinedTextField(value = centerPointPairs, onValueChange = {}, readOnly = true,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = centerPointPairsExpanded) }, modifier = Modifier.menuAnchor())
-                ExposedDropdownMenu(centerPointPairsExpanded, { centerPointPairsExpanded = false }) {
+                ExposedDropdownMenu(expanded = centerPointPairsExpanded, onDismissRequest = { centerPointPairsExpanded = false }) {
                     centerPointOptions.forEach { DropdownMenuItem(text = { Text(it) }, onClick = { centerPointPairs = it; centerPointPairsExpanded = false }) }
                 }
             }
@@ -286,8 +414,6 @@ fun MeasureScreen(
                 Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     MeasureInputRow("测距校准值", rangeCalibration, { rangeCalibration = it }, "mm", enabled = isFactoryEditable)
                     MeasureInputRow("监测站标定高", stationCalibrationH, { stationCalibrationH = it }, "mm", enabled = isFactoryEditable)
-                    
-                    // 壳体轴距标定修改校验
                     MeasureInputRow("壳体轴距标定", shellWheelbaseCalibration, { newValue ->
                         val newL = newValue.toDoubleOrNull()
                         val currentEqH = equipmentHeight.toDoubleOrNull() ?: 0.0
@@ -297,12 +423,11 @@ fun MeasureScreen(
                             shellWheelbaseCalibration = newValue
                         }
                     }, "mm", enabled = isFactoryEditable)
-
                     MeasureInputRow("2号光源标定", light2Calibration, { light2Calibration = it }, "mm", enabled = isFactoryEditable)
                     MeasureInputRow("设备等待时间", deviceWaitTime, { deviceWaitTime = it }, "秒")
                     MeasureInputRow("采集次数", collectionCount, { collectionCount = it }, null)
                     MeasureInputRow("杂项去除数", miscRemovalCount, { val v = it.toIntOrNull() ?: 0; if (v < (collectionCount.toIntOrNull() ?: 1)) miscRemovalCount = it }, null)
-                    
+
                     if (!isFactoryEditable) {
                         Button(onClick = { showPasswordDialog = true }, modifier = Modifier.fillMaxWidth()) {
                             Text("修改出厂标定")
@@ -316,46 +441,117 @@ fun MeasureScreen(
 
         Spacer(Modifier.weight(1f))
 
-        BottomActionRow(onBack, {
+        BottomActionRow(onBack, { showDeviceSettings = true }, {
             if (equipmentHeight.isBlank() || selectedPointId == null || floorNumber.isBlank() || pointNumber.isBlank()) {
                 Toast.makeText(context, "请填完必填项", Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(context, "正在测量 $pointNumber...", Toast.LENGTH_SHORT).show()
-                
-                xValue = "%.3f".format(Random.nextDouble(0.0, 1000.0))
-                yValue = "%.3f".format(Random.nextDouble(0.0, 1000.0))
+                scope.launch {
+                    val currentTime = System.currentTimeMillis()
+                    val tenMinutesAgo = currentTime - 10 * 60 * 1000
+                    withContext(Dispatchers.IO) {
+                        measurementResultDao.updateExpiredStates(MeasureState.MEASURING, MeasureState.TIMEOUT, tenMinutesAgo)
+                    }
 
-                scope.launch(Dispatchers.IO) {
-                    val count = measureCountInput.toIntOrNull() ?: 1
-                    repeat(count) {
-                        val result = MeasurementResult(
+                    val hasActive = withContext(Dispatchers.IO) {
+                        measurementResultDao.hasActiveTasks(MeasureState.MEASURING, tenMinutesAgo)
+                    }
+                    if (hasActive) {
+                        Toast.makeText(context, "存在测量中任务", Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
+
+                    val stateResp = device.getCurrentState()
+                    if (stateResp.status != "success" ) {
+                        Toast.makeText(context, "请求失败：${stateResp.message ?: "未知"}", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                    if (stateResp.data?.isMeasuring != 0) {
+                        Toast.makeText(context, "设备测量中", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+
+                    val measureId = currentTime
+                    // 开启测量时，将当前会话 ID 与此任务绑定
+                    currentSessionMeasureId = measureId
+
+                    val currentPointToSave = pointNumber
+                    val currentFloorToSave = floorNumber
+
+                    val localId = withContext(Dispatchers.IO) {
+                        measurementResultDao.insert(MeasurementResult(
+                            measureId = measureId,
+                            state = MeasureState.MEASURING,
                             deviceInstallationHeight = equipmentHeight,
                             controlPointId = selectedPointId!!,
                             monitoringStationInstallationHeight = stationHeight,
-                            floorNumber = floorNumber,
-                            pointNumber = pointNumber,
-                            centerPointPairs = centerPointPairs,
-                            rawData = List(8) { "%.3f".format(Random.nextDouble(0.0, 100.0)) }.joinToString(","),
-                            centerPointCoordinates = "$xValue,$yValue"
-                        )
-                        measurementResultDao.insert(result)
+                            floorNumber = currentFloorToSave,
+                            pointNumber = currentPointToSave,
+                            centerPointPairs = centerPointPairs
+                        ))
                     }
-                }
 
-                currentFloorProgress++
-                if (currentFloorProgress >= (pointsPerFloor.toIntOrNull() ?: 4)) {
-                    currentFloorProgress = 0
-                    val nextF = (floorNumber.toIntOrNull() ?: 1) + (if (floorOrderAsc) 1 else -1) * (floorInterval.toIntOrNull() ?: 1)
-                    floorNumber = nextF.toString()
-                    pointNumber = "C1"
-                } else {
-                    val prefix = pointNumber.takeWhile { !it.isDigit() }
-                    val suffix = (pointNumber.dropWhile { !it.isDigit() }.toIntOrNull() ?: 1) + (if (pointOrderAsc) 1 else -1) * (pointInterval.toIntOrNull() ?: 1)
-                    pointNumber = "$prefix$suffix"
+                    val response = device.measure(
+                        times = measureCountInput.toIntOrNull() ?: 1,
+                        centralPointCount = centerPointPairs.toIntOrNull() ?: 1,
+                        measureId = measureId,
+                        deviceWaitTime = deviceWaitTime.toIntOrNull() ?: 3,
+                        collectionCount = collectionCount.toIntOrNull() ?: 1,
+                        miscRemovalCount = miscRemovalCount.toIntOrNull() ?: 0
+                    )
+
+                    if (response.status != "success") {
+                        withContext(Dispatchers.IO) { measurementResultDao.updateState(localId, MeasureState.FAILED) }
+                        Toast.makeText(context, "启动失败: ${response.message}", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "测量已启动", Toast.LENGTH_SHORT).show()
+                        
+                        currentFloorProgress++
+                        if (currentFloorProgress >= (pointsPerFloor.toIntOrNull() ?: 4)) {
+                            currentFloorProgress = 0
+                            val nextF = (floorNumber.toIntOrNull() ?: 1) + (if (floorOrderAsc) 1 else -1) * (floorInterval.toIntOrNull() ?: 1)
+                            floorNumber = nextF.toString()
+                            pointNumber = "C1"
+                        } else {
+                            val prefix = pointNumber.takeWhile { !it.isDigit() }
+                            val suffix = (pointNumber.dropWhile { !it.isDigit() }.toIntOrNull() ?: 1) + (if (pointOrderAsc) 1 else -1) * (pointInterval.toIntOrNull() ?: 1)
+                            pointNumber = "$prefix$suffix"
+                        }
+                    }
                 }
             }
         }, measureCountInput, { measureCountInput = it })
     }
+}
+
+@Composable
+fun DeviceSettingsDialog(
+    currentUrl: String,
+    onUrlSave: (String) -> Unit,
+    onGetState: () -> Unit,
+    onCancelMeasure: () -> Unit,
+    onDrawResult: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var url by remember { mutableStateOf(currentUrl) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("设备控制") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it; onUrlSave(it) },
+                    label = { Text("设备地址") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Button(onClick = onGetState, modifier = Modifier.fillMaxWidth()) { Text("获取设备状态") }
+                Button(onClick = onCancelMeasure, modifier = Modifier.fillMaxWidth()) { Text("取消当前测量") }
+                Button(onClick = onDrawResult, modifier = Modifier.fillMaxWidth()) { Text("绘制测量结果") }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
 }
 
 @Composable
@@ -368,10 +564,11 @@ fun MeasureInputRow(label: String, value: String, onValueChange: (String) -> Uni
 }
 
 @Composable
-fun BottomActionRow(onBack: () -> Unit, onMeasure: () -> Unit, count: String, onCountChange: (String) -> Unit) {
+fun BottomActionRow(onBack: () -> Unit, onDevice: () -> Unit, onMeasure: () -> Unit, count: String, onCountChange: (String) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Button(onBack, Modifier.weight(1f)) { Text("返回") }
-        Button(onMeasure, Modifier.weight(1f)) { Text("测量") }
+        Button(onBack, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("返回", fontSize = 12.sp, maxLines = 1) }
+        Button(onDevice, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("设备", fontSize = 12.sp, maxLines = 1) }
+        Button(onMeasure, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("测量", fontSize = 12.sp, maxLines = 1) }
         OutlinedTextField(count, onCountChange, Modifier.weight(0.7f), label = { Text("次数", fontSize = 11.sp) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
     }
 }
@@ -397,7 +594,8 @@ fun ControlPointSelectionDialog(points: List<ControlPoint>, onDismiss: () -> Uni
             LazyColumn { items(points) { p ->
                 Column(Modifier.fillMaxWidth().clickable { onSelect(p) }.padding(8.dp)) {
                     Text(p.name, fontWeight = FontWeight.Bold)
-                    Text("x:${p.x} y:${p.y} h:${p.h}", fontSize = 12.sp, color = Color.Gray); Divider()
+                    Text("x:${p.x} y:${p.y} h:${p.h}", fontSize = 12.sp, color = Color.Gray)
+                    HorizontalDivider()
                 }
             }}
         }
@@ -427,20 +625,13 @@ fun PointSettingsDialog(isAsc: Boolean, inv: String, perF: String, onDismiss: ()
 }
 
 fun calculateEquipmentHeightOriginal(shellWheelbaseCalibration: Double, equipmentHeight: Double): Double {
-    // 避免除以0或无效数值导致 asin 崩溃
     if (shellWheelbaseCalibration <= 0 || equipmentHeight <= shellWheelbaseCalibration) {
         return 0.0
     }
-    
     val ratio = shellWheelbaseCalibration / equipmentHeight
-    // asin 的参数必须在 [-1, 1] 之间
     if (ratio > 1.0) return 0.0
-    
     val theta = asin(ratio)
     val tanTheta = tan(theta)
-    
-    // 避免 tanTheta 为 0
     if (tanTheta == 0.0) return 0.0
-    
     return shellWheelbaseCalibration / tanTheta
 }

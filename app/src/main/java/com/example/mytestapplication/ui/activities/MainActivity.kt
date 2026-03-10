@@ -2,6 +2,7 @@ package com.example.mytestapplication.ui.activities
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import com.example.mytestapplication.data.database.AppDatabase
 import com.example.mytestapplication.data.database.ProjectDao
 import com.example.mytestapplication.data.model.Project
+import com.example.mytestapplication.network.HttpServerService
 import com.example.mytestapplication.ui.theme.MytestApplicationTheme
 import com.example.mytestapplication.ui.common.VerticalDivider
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +48,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val database = AppDatabase.getDatabase(this)
         val projectDao = database.projectDao()
+
+        // 启动本地 HTTP 服务器前台服务
+        val serviceIntent = Intent(this, HttpServerService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        } else {
+            startService(serviceIntent)
+        }
 
         setContent {
             MytestApplicationTheme {
@@ -176,7 +186,7 @@ fun ProjectScreen(projects: List<Project>, projectDao: ProjectDao, modifier: Mod
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TableHeaderCell(text = if (currentMode == ScreenMode.NORMAL) "序号" else "选择", width = 80.dp)
-                    VerticalDivider(color = Color.White)
+                    VerticalDivider(color = Color.White) // 表头用白色线更清晰
                     TableHeaderCell(text = "名称", width = 150.dp)
                     VerticalDivider(color = Color.White)
                     TableHeaderCell(text = "管理员", width = 120.dp)
@@ -192,7 +202,7 @@ fun ProjectScreen(projects: List<Project>, projectDao: ProjectDao, modifier: Mod
                         Row(
                             modifier = Modifier
                                 .width(800.dp)
-                                .height(IntrinsicSize.Min)
+                                .height(IntrinsicSize.Min) // 关键：让高度自适应以使 VerticalDivider 填充
                                 .border(1.dp, Color.Gray),
                             verticalAlignment = Alignment.CenterVertically
                         ) {

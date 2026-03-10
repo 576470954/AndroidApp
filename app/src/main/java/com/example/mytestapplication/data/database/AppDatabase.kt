@@ -4,11 +4,13 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import com.example.mytestapplication.data.model.Project
 import com.example.mytestapplication.data.model.ControlPoint
 import com.example.mytestapplication.data.model.MeasurementResult
 
-@Database(entities = [Project::class, ControlPoint::class, MeasurementResult::class], version = 6, exportSchema = false)
+@Database(entities = [Project::class, ControlPoint::class, MeasurementResult::class], version = 8, exportSchema = false)
+@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun projectDao(): ProjectDao
     abstract fun controlPointDao(): ControlPointDao

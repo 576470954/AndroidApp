@@ -212,15 +212,51 @@ fun ControlPointScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(onClick = onCreateNew, modifier = Modifier.weight(1f)) { Text("新建") }
-                Button(onClick = onImport, modifier = Modifier.weight(1f)) { Text("导入") }
-                Button(onClick = onEnterDeleteMode, modifier = Modifier.weight(1f)) { Text("删除") }
-                Button(onClick = onBack, modifier = Modifier.weight(1f)) { Text("返回") }
+                Button(
+                    onClick = onCreateNew, 
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    Text("新建", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                }
+                Button(
+                    onClick = onImport, 
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    Text("导入", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                }
+                Button(
+                    onClick = onEnterDeleteMode, 
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    Text("删除", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                }
+                Button(
+                    onClick = onBack, 
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    Text("返回", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                }
             }
         } else {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(onClick = onCancelDelete, modifier = Modifier.weight(1f)) { Text("取消") }
-                Button(onClick = onConfirmDelete, modifier = Modifier.weight(1f)) { Text("确认删除") }
+                Button(
+                    onClick = onCancelDelete, 
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    Text("取消", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                }
+                Button(
+                    onClick = onConfirmDelete, 
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    Text("确认删除", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                }
             }
         }
     }

@@ -212,9 +212,9 @@ private suspend fun exportData(
     val fileName = "${prefix}_${fileSdf.format(Date())}.csv"
     
     val header = if (isDetail) {
-        "设备安装高,控制点名称,X,Y,H,监测站安装高,楼层号,点号,中心点对数,原始数据,计算过程详情,创建时间\n"
+        "光源站安装高,监测站安装高,控制点名称,控制点X,控制点Y,控制点H,楼层号,点号,中心点对数,原始数据,计算过程,计算结果,创建时间\n"
     } else {
-        "设备安装高,控制点名称,X,Y,H,监测站安装高,楼层号,点号,中心点对数,创建时间\n"
+        "光源站安装高,监测站安装高,控制点名称,控制点X,控制点Y,控制点H,楼层号,点号,中心点对数,计算结果,创建时间\n"
     }
     
     val content = StringBuilder(header)
@@ -222,16 +222,15 @@ private suspend fun exportData(
 
     dataToExport.forEach { item ->
         content.append("${item.measurementResult.deviceInstallationHeight},")
+        content.append("${item.measurementResult.monitoringStationInstallationHeight},")
         content.append("${item.controlPoint.name},")
         content.append("${item.controlPoint.x},${item.controlPoint.y},${item.controlPoint.h},")
-        content.append("${item.measurementResult.monitoringStationInstallationHeight},")
         content.append("${item.measurementResult.floorNumber},")
         content.append("${item.measurementResult.pointNumber},")
         content.append("${item.measurementResult.centerPointPairs},")
         
         if (isDetail) {
             content.append("\"${item.measurementResult.rawData}\",")
-            content.append("\"${item.measurementResult.centerPointCoordinates}\",")
             content.append("\"${item.measurementResult.processDetail}\",") // JSON
             content.append("\"${item.measurementResult.result}\",") // JSON
         } else {
