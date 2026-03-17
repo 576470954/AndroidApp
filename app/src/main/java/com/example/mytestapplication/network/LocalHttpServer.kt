@@ -83,6 +83,15 @@ object LocalHttpServer {
                         post("/api/uploadMeasureResult") {
                             try {
                                 val request = call.receive<UploadMeasureResultRequest>()
+                                
+                                // --- 打印请求内容 ---
+                                println("收到测量结果上报请求: ")
+                                println("MeasureID: ${request.measureId}")
+                                println("Status: ${request.status}")
+                                println("Message: ${request.message}")
+                                println("Data: ${gson.toJson(request.data)}")
+                                // -----------------
+
                                 if (request.status == "success" && request.data != null) {
                                     processAndSaveResults(request, measurementResultDao)
                                 } else {
@@ -90,6 +99,7 @@ object LocalHttpServer {
                                 }
                                 call.respond(BaseResponse("success", "已处理测量结果"))
                             } catch (e: Exception) {
+                                println("解析上报请求失败: ${e.message}")
                                 e.printStackTrace()
                                 call.respond(BaseResponse("error", "处理失败: ${e.message}"))
                             }
@@ -97,6 +107,7 @@ object LocalHttpServer {
                     }
                 }.start(wait = false)
             } catch (e: Exception) {
+                println("服务器启动异常: ${e.message}")
                 e.printStackTrace()
             }
         }
@@ -170,9 +181,6 @@ object LocalHttpServer {
             processDetailStr = gson.toJson(ProcessDetail(steps, null))
         }
 
-        dao.updateMeasureResultByMeasureId(request.measureId, rawDataStr, finalResultStr, MeasureState.COMPLETED)
-        // 注意：DAO 需要支持更新 processDetail。检查 DAO 发现之前的 updateMeasureResultByMeasureId 缺少 processDetail 参数
-        // 我们需要先去修改 DAO
         updateResultWithDetail(request.measureId, rawDataStr, finalResultStr, processDetailStr, dao)
     }
 
@@ -183,8 +191,6 @@ object LocalHttpServer {
         processDetail: String,
         dao: com.example.mytestapplication.data.database.MeasurementResultDao
     ) {
-        // 由于原有的 DAO 方法签名只有 3 个参数，我们需要改写一个逻辑或更新 DAO
-        // 这里假设我们稍后会更新 DAO 接口。为了保持流程，我们先调用更新后的 DAO (如果已存在)
         dao.updateMeasureResultFull(measureId, rawData, result, processDetail, MeasureState.COMPLETED)
     }
 

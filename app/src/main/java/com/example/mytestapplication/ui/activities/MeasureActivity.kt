@@ -42,7 +42,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.asin
+import kotlin.math.sqrt
 import kotlin.math.tan
 
 class MeasureActivity : ComponentActivity() {
@@ -94,7 +96,7 @@ fun MeasureScreen(
     var showStateDialog by remember { mutableStateOf(false) }
 
     // 基本设置状态
-    var equipmentHeight by remember { mutableStateOf("75") }
+    var equipmentHeight by remember { mutableStateOf("0") }
     var stationHeight by remember { mutableStateOf("0") }
     var floorNumber by remember { mutableStateOf("1") }
     var pointNumber by remember { mutableStateOf("C1") }
@@ -119,32 +121,7 @@ fun MeasureScreen(
     var yValue by remember { mutableStateOf("") }
     var hLabel by remember { mutableStateOf("H(靶面)") }
     var hMenuExpanded by remember { mutableStateOf(false) }
-
-    // 监听测量结果，仅处理当前会话的任务
-    LaunchedEffect(allResults, currentSessionMeasureId) {
-        if (currentSessionMeasureId == null) {
-            xValue = ""
-            yValue = ""
-            return@LaunchedEffect
-        }
-
-        val currentTask = allResults.find { it.measureId == currentSessionMeasureId }
-        if (currentTask != null) {
-            if (currentTask.state == MeasureState.COMPLETED && currentTask.result.isNotBlank()) {
-                try {
-                    val coord = Gson().fromJson(currentTask.result, PointCoord::class.java)
-                    if (coord != null) {
-                        xValue = "%.3f".format(coord.x)
-                        yValue = "%.3f".format(coord.y)
-                    }
-                } catch (e: Exception) {
-                    xValue = ""; yValue = ""
-                }
-            } else if (currentTask.state == MeasureState.MEASURING) {
-                xValue = ""; yValue = ""
-            }
-        }
-    }
+    var distanceResult by remember { mutableStateOf(-1) }
 
     // 控制点选择状态
     var selectedPointId by remember { mutableStateOf<Long?>(null) }
@@ -152,25 +129,33 @@ fun MeasureScreen(
     var selectedPointH by remember { mutableDoubleStateOf(0.0) }
     var showPointSelector by remember { mutableStateOf(false) }
 
+    // 测量
+    var showMeasureStateDialog by remember { mutableStateOf(false) }
+
     // 根据公式计算显示的 H 值
-    val hValueDisplay = remember(hLabel, equipmentHeight, stationHeight, selectedPointH, rangeCalibration, stationCalibrationH, shellWheelbaseCalibration, light2Calibration) {
-        val eqH = equipmentHeight.toDoubleOrNull() ?: 0.0
-        val swC = shellWheelbaseCalibration.toDoubleOrNull() ?: 0.0
-        val eqHReal = calculateEquipmentHeightOriginal(swC, eqH)
-        val stH = stationHeight.toDoubleOrNull() ?: 0.0
-        val rCal = rangeCalibration.toDoubleOrNull() ?: 0.0
-        val sCalH = stationCalibrationH.toDoubleOrNull() ?: 0.0
-        val l2Cal = light2Calibration.toDoubleOrNull() ?: 0.0
+    val hValueDisplay = remember(hLabel, equipmentHeight, stationHeight, selectedPointH, rangeCalibration, stationCalibrationH, shellWheelbaseCalibration, light2Calibration, distanceResult) {
+        if (distanceResult < 0) {
+            ""
+        } else {
+            val eqH = equipmentHeight.toDoubleOrNull() ?: 0.0
+            val swC = shellWheelbaseCalibration.toDoubleOrNull() ?: 0.0
+            val eqHReal = calculateEquipmentHeightOriginal(swC, eqH)
+            val stH = stationHeight.toDoubleOrNull() ?: 0.0
+            val rCal = rangeCalibration.toDoubleOrNull() ?: 0.0
+            val sCalH = stationCalibrationH.toDoubleOrNull() ?: 0.0
+            val l2Cal = light2Calibration.toDoubleOrNull() ?: 0.0
 
-        val targetH = eqHReal + selectedPointH + rCal + sCalH
+            val targetH = eqHReal + selectedPointH + sCalH + distanceResult + rCal
 
-        val result = when (hLabel) {
-            "H(地面)" -> targetH - stH
-            "H(墙面)" -> targetH + l2Cal
-            else -> targetH
+            val result = when (hLabel) {
+                "H(地面)" -> targetH - stH - sCalH
+                "H(墙面)" -> targetH - l2Cal
+                else -> targetH
+            }
+            "%.3f".format(result)
         }
-        "%.3f".format(result)
     }
+
 
     // 步进状态
     var currentFloorProgress by remember { mutableIntStateOf(0) }
@@ -184,6 +169,54 @@ fun MeasureScreen(
 
     val centerPointOptions = listOf("1", "4", "8")
     var centerPointPairsExpanded by remember { mutableStateOf(false) }
+
+    // 监听测量结果，仅处理当前会话的任务
+    LaunchedEffect(allResults, currentSessionMeasureId) {
+        if (currentSessionMeasureId == null) {
+            xValue = ""
+            yValue = ""
+            return@LaunchedEffect
+        }
+
+        val currentTask = allResults.find { it.measureId == currentSessionMeasureId }
+        if (currentTask != null) {
+            if (currentTask.state == MeasureState.COMPLETED && currentTask.result.isNotBlank()) {
+                try {
+                    showMeasureStateDialog = true
+
+                    val coord = Gson().fromJson(currentTask.result, PointCoord::class.java)
+                    if (coord != null) {
+                        scope.launch {
+                            val resp = device.drawCircle(
+                                x = coord.x.toInt(),
+                                y = coord.y.toInt(),
+                                radius = 50,
+                                color = "RED"
+                            )
+                            Toast.makeText(context, if (resp.status == "success") "绘制命令已发送" else "绘制失败: ${resp.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(context, "结果格式错误", Toast.LENGTH_SHORT).show()
+                    }
+
+                    // 步进
+                    currentFloorProgress++
+                    if (currentFloorProgress >= (pointsPerFloor.toIntOrNull() ?: 4)) {
+                        currentFloorProgress = 0
+                        val nextF = (floorNumber.toIntOrNull() ?: 1) + (if (floorOrderAsc) 1 else -1) * (floorInterval.toIntOrNull() ?: 1)
+                        floorNumber = nextF.toString()
+                        pointNumber = "C1"
+                    } else {
+                        val prefix = pointNumber.takeWhile { !it.isDigit() }
+                        val suffix = (pointNumber.dropWhile { !it.isDigit() }.toIntOrNull() ?: 1) + (if (pointOrderAsc) 1 else -1) * (pointInterval.toIntOrNull() ?: 1)
+                        pointNumber = "$prefix$suffix"
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "解析结果失败", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     // --- 弹窗逻辑 ---
     if (showStateDialog) {
@@ -305,6 +338,8 @@ fun MeasureScreen(
             selectedPointId = point.id
             selectedPointName = point.name
             selectedPointH = point.h.toDoubleOrNull() ?: 0.0
+            xValue = "%.3f".format(point.x.toDoubleOrNull() ?: 0.0)
+            yValue = "%.3f".format(point.y.toDoubleOrNull() ?: 0.0)
             showPointSelector = false
         }
     }
@@ -317,6 +352,16 @@ fun MeasureScreen(
         PointSettingsDialog(pointOrderAsc, pointInterval, pointsPerFloor, { showPointSettingsDialog = false }) { isAsc, inv, perF ->
             pointOrderAsc = isAsc; pointInterval = inv; pointsPerFloor = perF; showPointSettingsDialog = false
         }
+    }
+
+    if (showMeasureStateDialog) {
+        AlertDialog(
+            onDismissRequest = { showMeasureStateDialog = false },
+            title = { Text("测量结果") },
+            text = { Text("测量完成") },
+            confirmButton = { Button(onClick = { showMeasureStateDialog = false; // todo bujin
+             }) { Text("继续测量") } }
+        )
     }
 
     Column(
@@ -366,10 +411,9 @@ fun MeasureScreen(
         MeasureInputRow("光源站安装高*", equipmentHeight, { newValue ->
             val newEqH = newValue.toDoubleOrNull()
             val currentL = shellWheelbaseCalibration.toDoubleOrNull() ?: 0.0
+            equipmentHeight = newValue
             if (newEqH != null && newEqH < currentL) {
-                Toast.makeText(context, "光源站安装高不能小于壳体轴距标定值", Toast.LENGTH_SHORT).show()
-            } else {
-                equipmentHeight = newValue
+                Toast.makeText(context, "光源站安装高小于壳体轴距标定值（见说明书附件B）", Toast.LENGTH_SHORT).show()
             }
         }, "mm")
 
@@ -490,6 +534,18 @@ fun MeasureScreen(
                         ))
                     }
 
+                    // 测量高程测距
+                    val distanceResp = device.distanceMeasured(
+                        measureId = measureId,
+                    )
+                    if (distanceResp.success) {
+                        distanceResult = distanceResp.distance_mm;
+                    } else {
+                        withContext(Dispatchers.IO) { measurementResultDao.updateState(localId, MeasureState.FAILED) }
+                        Toast.makeText(context, "测距失败", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+
                     val response = device.measure(
                         times = measureCountInput.toIntOrNull() ?: 1,
                         centralPointCount = centerPointPairs.toIntOrNull() ?: 1,
@@ -504,18 +560,6 @@ fun MeasureScreen(
                         Toast.makeText(context, "启动失败: ${response.message}", Toast.LENGTH_LONG).show()
                     } else {
                         Toast.makeText(context, "测量已启动", Toast.LENGTH_SHORT).show()
-                        
-                        currentFloorProgress++
-                        if (currentFloorProgress >= (pointsPerFloor.toIntOrNull() ?: 4)) {
-                            currentFloorProgress = 0
-                            val nextF = (floorNumber.toIntOrNull() ?: 1) + (if (floorOrderAsc) 1 else -1) * (floorInterval.toIntOrNull() ?: 1)
-                            floorNumber = nextF.toString()
-                            pointNumber = "C1"
-                        } else {
-                            val prefix = pointNumber.takeWhile { !it.isDigit() }
-                            val suffix = (pointNumber.dropWhile { !it.isDigit() }.toIntOrNull() ?: 1) + (if (pointOrderAsc) 1 else -1) * (pointInterval.toIntOrNull() ?: 1)
-                            pointNumber = "$prefix$suffix"
-                        }
                     }
                 }
             }
@@ -625,13 +669,15 @@ fun PointSettingsDialog(isAsc: Boolean, inv: String, perF: String, onDismiss: ()
 }
 
 fun calculateEquipmentHeightOriginal(shellWheelbaseCalibration: Double, equipmentHeight: Double): Double {
-    if (shellWheelbaseCalibration <= 0 || equipmentHeight <= shellWheelbaseCalibration) {
-        return 0.0
+    // 小于壳体轴标定，则直接返回
+    if (abs(equipmentHeight) <= shellWheelbaseCalibration) {
+        return equipmentHeight
     }
-    val ratio = shellWheelbaseCalibration / equipmentHeight
-    if (ratio > 1.0) return 0.0
-    val theta = asin(ratio)
-    val tanTheta = tan(theta)
-    if (tanTheta == 0.0) return 0.0
-    return shellWheelbaseCalibration / tanTheta
+
+    return if (equipmentHeight >= 0) {
+        sqrt(equipmentHeight * equipmentHeight - shellWheelbaseCalibration * shellWheelbaseCalibration)
+    } else {
+        - sqrt(equipmentHeight * equipmentHeight - shellWheelbaseCalibration * shellWheelbaseCalibration)
+    }
+
 }

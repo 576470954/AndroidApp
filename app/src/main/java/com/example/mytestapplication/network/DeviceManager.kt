@@ -58,8 +58,10 @@ class Device(var baseUrl: String) {
             collectionCount = collectionCount,
             miscRemovalCount = miscRemovalCount
         )
-        return HttpClient.post(url, body, BaseResponse::class.java) 
-            ?: BaseResponse("error", "网络请求失败")
+        return when (val result = HttpClient.post(url, body, BaseResponse::class.java)) {
+            is NetworkResult.Success -> result.data
+            is NetworkResult.Error -> BaseResponse("error", result.message)
+        }
     }
 
     /**
@@ -67,8 +69,10 @@ class Device(var baseUrl: String) {
      */
     suspend fun getCurrentState(): DeviceStateResponse {
         val url = "$baseUrl/api/getCurrentState"
-        return HttpClient.get(url, DeviceStateResponse::class.java)
-            ?: DeviceStateResponse("error", "网络请求失败")
+        return when (val result = HttpClient.post(url, emptyMap<String, Any>(),DeviceStateResponse::class.java)) {
+            is NetworkResult.Success -> result.data
+            is NetworkResult.Error -> DeviceStateResponse("error", result.message)
+        }
     }
 
     /**
@@ -77,8 +81,10 @@ class Device(var baseUrl: String) {
     suspend fun cancelMeasure(measureId: Long): BaseResponse {
         val url = "$baseUrl/api/cancelMeasure"
         val body = CancelMeasureRequest(measureId)
-        return HttpClient.post(url, body, BaseResponse::class.java)
-            ?: BaseResponse("error", "网络请求失败")
+        return when (val result = HttpClient.post(url, body, BaseResponse::class.java)) {
+            is NetworkResult.Success -> result.data
+            is NetworkResult.Error -> BaseResponse("error", result.message)
+        }
     }
 
     /**
@@ -87,7 +93,35 @@ class Device(var baseUrl: String) {
     suspend fun drawCircle(x: Int, y: Int, radius: Int, color: String): BaseResponse {
         val url = "$baseUrl/screen/draw-circle"
         val body = DrawCircleRequest(x, y, radius, color)
-        return HttpClient.post(url, body, BaseResponse::class.java)
-            ?: BaseResponse("error", "网络请求失败")
+        return when (val result = HttpClient.post(url, body, BaseResponse::class.java)) {
+            is NetworkResult.Success -> result.data
+            is NetworkResult.Error -> BaseResponse("error", result.message)
+        }
+    }
+
+    /**
+     * 测距
+     */
+    suspend fun distanceMeasured(measureId: Long): DistanceMeasuredResp {
+        val url = "$baseUrl/api/lora/distance-measured"
+        val body = DistanceMeasuredReq(measureId)
+        return when (val result = HttpClient.post(url, body, DistanceMeasuredResp::class.java)) {
+            is NetworkResult.Success -> result.data
+            is NetworkResult.Error -> DistanceMeasuredResp(false, 0, 0.0, 0, 0)
+        }
     }
 }
+
+data class DistanceMeasuredReq(
+    val measureId: Long
+)
+
+data class DistanceMeasuredResp(
+    val success: Boolean,
+    val distance_mm: Int,
+    val distance_m: Double,
+    val signal_strength: Int,
+    val sequence: Int,
+)
+
+
