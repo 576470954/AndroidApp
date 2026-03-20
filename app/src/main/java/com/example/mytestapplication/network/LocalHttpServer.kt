@@ -64,7 +64,7 @@ object LocalHttpServer {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val gson = Gson()
 
-    fun start(context: Context, port: Int = 8080) {
+    fun start(context: Context, port: Int = 8000) {
         if (server != null) return
 
         val database = AppDatabase.getDatabase(context)
@@ -83,7 +83,7 @@ object LocalHttpServer {
                         post("/api/uploadMeasureResult") {
                             try {
                                 val request = call.receive<UploadMeasureResultRequest>()
-                                
+
                                 // --- 打印请求内容 ---
                                 println("收到测量结果上报请求: ")
                                 println("MeasureID: ${request.measureId}")

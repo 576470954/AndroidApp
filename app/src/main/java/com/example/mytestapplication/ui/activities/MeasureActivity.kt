@@ -30,9 +30,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mytestapplication.data.database.AppDatabase
 import com.example.mytestapplication.data.database.MeasurementResultDao
+import com.example.mytestapplication.data.database.SystemConfigDao
 import com.example.mytestapplication.data.model.ControlPoint
 import com.example.mytestapplication.data.model.MeasureState
 import com.example.mytestapplication.data.model.MeasurementResult
+import com.example.mytestapplication.data.model.SystemConfig
 import com.example.mytestapplication.network.Device
 import com.example.mytestapplication.network.PointCoord
 import com.example.mytestapplication.ui.theme.MytestApplicationTheme
@@ -53,6 +55,7 @@ class MeasureActivity : ComponentActivity() {
         val database = AppDatabase.getDatabase(this)
         val controlPointDao = database.controlPointDao()
         val measurementResultDao = database.measurementResultDao()
+        val systemConfigDao = database.systemConfigDao()
 
         setContent {
             MytestApplicationTheme {
@@ -64,7 +67,8 @@ class MeasureActivity : ComponentActivity() {
                     MeasureScreen(
                         points = points,
                         onBack = { finish() },
-                        measurementResultDao = measurementResultDao
+                        measurementResultDao = measurementResultDao,
+                        systemConfigDao = systemConfigDao
                     )
                 }
             }
@@ -77,7 +81,8 @@ class MeasureActivity : ComponentActivity() {
 fun MeasureScreen(
     points: List<ControlPoint>,
     onBack: () -> Unit,
-    measurementResultDao: MeasurementResultDao
+    measurementResultDao: MeasurementResultDao,
+    systemConfigDao: SystemConfigDao
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -116,12 +121,26 @@ fun MeasureScreen(
     var isFactoryEditable by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
 
+    // 初始加载内部参数
+    LaunchedEffect(Unit) {
+        val config = withContext(Dispatchers.IO) { systemConfigDao.getConfig().first() }
+        config?.let {
+            rangeCalibration = it.rangeCalibration
+            stationCalibrationH = it.stationCalibrationH
+            shellWheelbaseCalibration = it.shellWheelbaseCalibration
+            light2Calibration = it.light2Calibration
+            deviceWaitTime = it.deviceWaitTime
+            collectionCount = it.collectionCount
+            miscRemovalCount = it.miscRemovalCount
+        }
+    }
+
     // 第一行展示的实时坐标
     var xValue by remember { mutableStateOf("") }
     var yValue by remember { mutableStateOf("") }
     var hLabel by remember { mutableStateOf("H(靶面)") }
     var hMenuExpanded by remember { mutableStateOf(false) }
-    var distanceResult by remember { mutableStateOf(-1) }
+    var distanceResult by remember { mutableDoubleStateOf(-1.0) }
 
     // 控制点选择状态
     var selectedPointId by remember { mutableStateOf<Long?>(null) }
@@ -472,11 +491,41 @@ fun MeasureScreen(
                     MeasureInputRow("采集次数", collectionCount, { collectionCount = it }, null)
                     MeasureInputRow("杂项去除数", miscRemovalCount, { val v = it.toIntOrNull() ?: 0; if (v < (collectionCount.toIntOrNull() ?: 1)) miscRemovalCount = it }, null)
 
-                    if (!isFactoryEditable) {
-                        Button(onClick = { showPasswordDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text("修改出厂标定")
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (!isFactoryEditable) {
+                            Button(onClick = { showPasswordDialog = true }, modifier = Modifier.weight(1f)) {
+                                Text("修改出厂标定")
+                            }
+                        } else {
+                            Button(onClick = { isFactoryEditable = false }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) {
+                                Text("退出修改")
+                            }
                         }
-                    } else {
+                        
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        systemConfigDao.saveConfig(SystemConfig(
+                                            rangeCalibration = rangeCalibration,
+                                            stationCalibrationH = stationCalibrationH,
+                                            shellWheelbaseCalibration = shellWheelbaseCalibration,
+                                            light2Calibration = light2Calibration,
+                                            deviceWaitTime = deviceWaitTime,
+                                            collectionCount = collectionCount,
+                                            miscRemovalCount = miscRemovalCount
+                                        ))
+                                    }
+                                    Toast.makeText(context, "内部参数已保存", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("保存内部参数")
+                        }
+                    }
+
+                    if (isFactoryEditable) {
                         Text("已开启出厂编辑模式", color = Color.Red, fontSize = 12.sp, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
                     }
                 }
@@ -484,6 +533,16 @@ fun MeasureScreen(
         }
 
         Spacer(Modifier.weight(1f))
+
+        if (isFactoryEditable) {
+            Button(
+                onClick = { isFactoryEditable = false },
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("返回")
+            }
+        }
 
         BottomActionRow(onBack, { showDeviceSettings = true }, {
             if (equipmentHeight.isBlank() || selectedPointId == null || floorNumber.isBlank() || pointNumber.isBlank()) {

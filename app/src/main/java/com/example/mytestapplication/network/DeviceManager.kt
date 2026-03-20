@@ -107,7 +107,7 @@ class Device(var baseUrl: String) {
         val body = DistanceMeasuredReq(measureId)
         return when (val result = HttpClient.post(url, body, DistanceMeasuredResp::class.java)) {
             is NetworkResult.Success -> result.data
-            is NetworkResult.Error -> DistanceMeasuredResp(false, 0, 0.0, 0, 0)
+            is NetworkResult.Error -> DistanceMeasuredResp(false, 0.0, 0.0, 0, 0)
         }
     }
 }
@@ -118,7 +118,7 @@ data class DistanceMeasuredReq(
 
 data class DistanceMeasuredResp(
     val success: Boolean,
-    val distance_mm: Int,
+    val distance_mm: Double,
     val distance_m: Double,
     val signal_strength: Int,
     val sequence: Int,
