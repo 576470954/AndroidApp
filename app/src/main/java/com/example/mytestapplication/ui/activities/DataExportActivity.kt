@@ -212,32 +212,38 @@ private suspend fun exportData(
     val fileName = "${prefix}_${fileSdf.format(Date())}.csv"
     
     val header = if (isDetail) {
-        "光源站安装高,监测站安装高,控制点名称,控制点X,控制点Y,控制点H,楼层号,点号,中心点对数,原始数据,计算过程,计算结果,创建时间\n"
+        "任务状态,光源站安装高,监测站安装高,控制点名称,控制点X,控制点Y,控制点H,楼层号,点号,中心点对数,高程结果,内部参数,原始数据,计算过程,计算结果,创建时间\n"
     } else {
-        "光源站安装高,监测站安装高,控制点名称,控制点X,控制点Y,控制点H,楼层号,点号,中心点对数,计算结果,创建时间\n"
+        "任务状态,光源站安装高,监测站安装高,控制点名称,控制点X,控制点Y,控制点H,楼层号,点号,中心点对数,高程结果,计算结果,创建时间\n"
     }
     
     val content = StringBuilder(header)
     val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
 
     dataToExport.forEach { item ->
-        content.append("${item.measurementResult.deviceInstallationHeight},")
-        content.append("${item.measurementResult.monitoringStationInstallationHeight},")
-        content.append("${item.controlPoint.name},")
-        content.append("${item.controlPoint.x},${item.controlPoint.y},${item.controlPoint.h},")
-        content.append("${item.measurementResult.floorNumber},")
-        content.append("${item.measurementResult.pointNumber},")
-        content.append("${item.measurementResult.centerPointPairs},")
+        val mResult = item.measurementResult
+        val cPoint = item.controlPoint
+
+        content.append("${mResult.state},")
+        content.append("${mResult.deviceInstallationHeight},")
+        content.append("${mResult.monitoringStationInstallationHeight},")
+        content.append("${cPoint.name},")
+        content.append("${cPoint.x},${cPoint.y},${cPoint.h},")
+        content.append("${mResult.floorNumber},")
+        content.append("${mResult.pointNumber},")
+        content.append("${mResult.centerPointPairs},")
+        content.append("\"${mResult.heightResult}\",")
         
         if (isDetail) {
-            content.append("\"${item.measurementResult.rawData}\",")
-            content.append("\"${item.measurementResult.processDetail}\",") // JSON
-            content.append("\"${item.measurementResult.result}\",") // JSON
+            content.append("\"${mResult.internalParameters}\",")
+            content.append("\"${mResult.rawData}\",")
+            content.append("\"${mResult.processDetail}\",") // JSON
+            content.append("\"${mResult.result}\",") // JSON
         } else {
-            content.append("\"${item.measurementResult.result}\",") // 仅结果
+            content.append("\"${mResult.result}\",") // 仅结果
         }
 
-        content.append("${sdf.format(Date(item.measurementResult.createTime))}\n")
+        content.append("${sdf.format(Date(mResult.createTime))}\n")
     }
 
     withContext(Dispatchers.IO) {

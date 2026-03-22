@@ -3,6 +3,7 @@ package com.example.mytestapplication.network
 import android.content.Context
 import com.example.mytestapplication.data.database.AppDatabase
 import com.example.mytestapplication.data.model.MeasureState
+import com.example.mytestapplication.data.model.SystemConfig
 import com.google.gson.Gson
 import io.ktor.serialization.gson.*
 import io.ktor.server.application.*
@@ -44,6 +45,8 @@ data class PointCoord(val x: Double, val y: Double)
 
 data class ProcessStep(
     val pointCount: Int,
+    var misced: List<List<Pair<Double,Double>>>,
+    var avgMisced: List<Pair<Double, Double>>,
     val intersections: List<PointCoord>,
     val roundAverage: PointCoord?
 )
@@ -118,70 +121,118 @@ object LocalHttpServer {
         dao: com.example.mytestapplication.data.database.MeasurementResultDao
     ) = withContext(Dispatchers.IO) {
         val rawDataStr = gson.toJson(request.data)
-        val steps = mutableListOf<ProcessStep>()
+        
+        // 根据 measureId 从数据库取出杂项去除数
+        val record = dao.getResultByMeasureId(request.measureId)
 
-        request.data?.forEach { group ->
-            val p0 = group.p0?.firstOrNull()
-            val p1 = group.p1?.firstOrNull()
-            val p2 = group.p2?.firstOrNull()
-            val p3 = group.p3?.firstOrNull()
-            val p4 = group.p4?.firstOrNull()
-            val p5 = group.p5?.firstOrNull()
-            val p6 = group.p6?.firstOrNull()
-            val p7 = group.p7?.firstOrNull()
-
-            val available = listOfNotNull(p0, p1, p2, p3, p4, p5, p6, p7)
-            var roundIntersections = mutableListOf<PointCoord>()
-            var roundAvg: PointCoord? = null
-
-            when {
-                available.size == 1 -> {
-                    val p = available[0]
-                    roundAvg = PointCoord(p[0], p[1])
-                    roundIntersections.add(roundAvg)
+        if (record != null) {
+            try {
+                val miscCount = record.let {
+                    val config = gson.fromJson(it.internalParameters, SystemConfig::class.java)
+                    config.miscRemovalCount.toIntOrNull() ?: 0
                 }
-                p0 != null && p1 != null && p2 != null && p3 != null && available.size == 4 -> {
-                    val inter = calculateFourPointIntersection(p0, p1, p2, p3)
-                    if (inter != null) {
-                        roundAvg = PointCoord(inter.first, inter.second)
-                        roundIntersections.add(roundAvg)
+
+                val steps = mutableListOf<ProcessStep>()
+
+                request.data?.forEach { group ->
+
+                    val misced = mutableListOf<List<Pair<Double,Double>>>()
+                    val p0misc = group.p0?.toPointList()?.misc2D(miscCount)
+                    val p1misc = group.p1?.toPointList()?.misc2D(miscCount)
+                    val p2misc = group.p2?.toPointList()?.misc2D(miscCount)
+                    val p3misc = group.p3?.toPointList()?.misc2D(miscCount)
+                    val p4misc = group.p4?.toPointList()?.misc2D(miscCount)
+                    val p5misc = group.p5?.toPointList()?.misc2D(miscCount)
+                    val p6misc = group.p6?.toPointList()?.misc2D(miscCount)
+                    val p7misc = group.p7?.toPointList()?.misc2D(miscCount)
+
+                    p0misc?.let { misced.add(it) }
+                    p1misc?.let { misced.add(it) }
+                    p2misc?.let { misced.add(it) }
+                    p3misc?.let { misced.add(it) }
+                    p4misc?.let { misced.add(it) }
+                    p5misc?.let { misced.add(it) }
+                    p6misc?.let { misced.add(it) }
+                    p7misc?.let { misced.add(it) }
+
+                    val avgMisced = mutableListOf<Pair<Double, Double>>()
+                    val p0 = p0misc?.averagePoint()
+                    val p1 = p1misc?.averagePoint()
+                    val p2 = p2misc?.averagePoint()
+                    val p3 = p3misc?.averagePoint()
+                    val p4 = p4misc?.averagePoint()
+                    val p5 = p5misc?.averagePoint()
+                    val p6 = p6misc?.averagePoint()
+                    val p7 = p7misc?.averagePoint()
+
+                    p0?.let { avgMisced.add(it) }
+                    p1?.let { avgMisced.add(it) }
+                    p2?.let { avgMisced.add(it) }
+                    p3?.let { avgMisced.add(it) }
+                    p4?.let { avgMisced.add(it) }
+                    p5?.let { avgMisced.add(it) }
+                    p6?.let { avgMisced.add(it) }
+                    p7?.let { avgMisced.add(it) }
+
+                    val available = listOfNotNull(p0, p1, p2, p3, p4, p5, p6, p7)
+                    val roundIntersections = mutableListOf<PointCoord>()
+                    var roundAvg: PointCoord? = null
+
+                    when {
+                        available.size == 1 -> {
+                            val p = available[0]
+                            roundAvg = PointCoord(p.first, p.second)
+                            roundIntersections.add(roundAvg)
+                        }
+                        p0 != null && p1 != null && p2 != null && p3 != null && available.size == 4 -> {
+                            val inter = calculateFourPointIntersection(p0, p1, p2, p3)
+                            if (inter != null) {
+                                roundAvg = PointCoord(inter.first, inter.second)
+                                roundIntersections.add(roundAvg)
+                            }
+                        }
+                        p0 != null && p1 != null && p2 != null && p3 != null &&
+                                p4 != null && p5 != null && p6 != null && p7 != null -> {
+                            val inter1 = calculateFourPointIntersection(p0, p2, p4, p6)
+                            val inter2 = calculateFourPointIntersection(p1, p3, p5, p7)
+
+                            if (inter1 != null) roundIntersections.add(PointCoord(inter1.first, inter1.second))
+                            if (inter2 != null) roundIntersections.add(PointCoord(inter2.first, inter2.second))
+
+                            if (roundIntersections.isNotEmpty()) {
+                                roundAvg = PointCoord(
+                                    roundIntersections.map { it.x }.average(),
+                                    roundIntersections.map { it.y }.average()
+                                )
+                            }
+                        }
                     }
+                    steps.add(ProcessStep(available.size, misced, avgMisced, roundIntersections, roundAvg))
                 }
-                p0 != null && p1 != null && p2 != null && p3 != null &&
-                        p4 != null && p5 != null && p6 != null && p7 != null -> {
-                    val inter1 = calculateFourPointIntersection(p0, p2, p4, p6)
-                    val inter2 = calculateFourPointIntersection(p1, p3, p5, p7)
-                    
-                    if (inter1 != null) roundIntersections.add(PointCoord(inter1.first, inter1.second))
-                    if (inter2 != null) roundIntersections.add(PointCoord(inter2.first, inter2.second))
 
-                    if (roundIntersections.isNotEmpty()) {
-                        roundAvg = PointCoord(
-                            roundIntersections.map { it.x }.average(),
-                            roundIntersections.map { it.y }.average()
-                        )
-                    }
+                val validSteps = steps.filter { it.roundAverage != null }
+                var finalResultStr = ""
+                var processDetailStr = ""
+
+                if (validSteps.isNotEmpty()) {
+                    val finalX = validSteps.map { it.roundAverage!!.x }.average()
+                    val finalY = validSteps.map { it.roundAverage!!.y }.average()
+
+                    val finalAverage = FinalAverage(finalX, finalY, validSteps.size)
+                    processDetailStr = gson.toJson(ProcessDetail(steps, finalAverage))
+                    finalResultStr = gson.toJson(PointCoord(finalX, finalY))
+                } else {
+                    processDetailStr = gson.toJson(ProcessDetail(steps, null))
                 }
+
+                updateResultWithDetail(request.measureId, rawDataStr, finalResultStr, processDetailStr, dao)
+            } catch (e: Exception) {
+                dao.updateMeasureResultFull(request.measureId, rawDataStr, "", e.message ?: "", MeasureState.FAILED)
             }
-            steps.add(ProcessStep(available.size, roundIntersections, roundAvg))
         }
 
-        val validSteps = steps.filter { it.roundAverage != null }
-        var finalResultStr = ""
-        var processDetailStr = ""
 
-        if (validSteps.isNotEmpty()) {
-            val finalX = validSteps.map { it.roundAverage!!.x }.average()
-            val finalY = validSteps.map { it.roundAverage!!.y }.average()
-            
-            val finalAverage = FinalAverage(finalX, finalY, validSteps.size)
-            processDetailStr = gson.toJson(ProcessDetail(steps, finalAverage))
-            finalResultStr = gson.toJson(PointCoord(finalX, finalY))
-        } else {
-            processDetailStr = gson.toJson(ProcessDetail(steps, null))
-        }
 
-        updateResultWithDetail(request.measureId, rawDataStr, finalResultStr, processDetailStr, dao)
     }
 
     private suspend fun updateResultWithDetail(
@@ -195,13 +246,12 @@ object LocalHttpServer {
     }
 
     private fun calculateFourPointIntersection(
-        pA: List<Double>, pB: List<Double>, pC: List<Double>, pD: List<Double>
+        pA: Pair<Double, Double>, pB: Pair<Double, Double>, pC: Pair<Double, Double>, pD: Pair<Double, Double>
     ): Pair<Double, Double>? {
-        if (pA.size < 2 || pB.size < 2 || pC.size < 2 || pD.size < 2) return null
-        val x1 = pA[0]; val y1 = pA[1]
-        val x2 = pB[0]; val y2 = pB[1]
-        val x3 = pC[0]; val y3 = pC[1]
-        val x4 = pD[0]; val y4 = pD[1]
+        val x1 = pA.first; val y1 = pA.second
+        val x2 = pB.first; val y2 = pB.second
+        val x3 = pC.first; val y3 = pC.second
+        val x4 = pD.first; val y4 = pD.second
 
         val a1 = y3 - y1
         val b1 = x1 - x3
@@ -219,6 +269,52 @@ object LocalHttpServer {
         } else {
             null
         }
+    }
+
+    fun List<List<Double>>.toPointList(): List<Pair<Double, Double>> {
+        return mapNotNull {
+            if (it.size == 2) it[0] to it[1]
+            else throw IllegalArgumentException("坐标数组必须包含且仅包含 2 个元素 (x,y)，当前长度：${it.size}，数组：$it")
+        }
+    }
+
+    /**
+     * 二维坐标平差（真正按【二维距离】去除杂项，不是按X排序）
+     * 逻辑：
+     * 1. 算中心点
+     * 2. 按距离中心点远近排序
+     * 3. 移除最远的 removeCount 个点（真正的去杂项）
+     * 4. 若 removeCount 奇数 → 再移除一个最远点
+     * 5. 最后算平均 x、平均 y
+     */
+    fun List<Pair<Double, Double>>.misc2D(removeCount: Int): List<Pair<Double, Double>>? {
+        if (isEmpty() || size <= removeCount) return this
+        if (removeCount < 0) return this
+
+        // 1. 先算整体中心点（x平均、y平均）
+        val originAvgX = map { it.first }.average()
+        val originAvgY = map { it.second }.average()
+
+        // 2. 按【到中心点的距离】从小到大排序（最近 → 最远）
+        val sortedByDistance = sortedBy { (x, y) ->
+            val dx = x - originAvgX
+            val dy = y - originAvgY
+            dx * dx + dy * dy // 距离平方（等价距离排序，更快）
+        }
+
+        // 3. 去除最远的 removeCount 个点
+        val trimmed = sortedByDistance.dropLast(removeCount)
+        if (trimmed.isEmpty()) return null
+
+        return trimmed
+    }
+    
+
+    fun List<Pair<Double, Double>>.averagePoint(): Pair<Double, Double>? {
+        if (isEmpty()) return null
+        val xAvg = map { it.first }.average()
+        val yAvg = map { it.second }.average()
+        return xAvg to yAvg
     }
 
     private suspend fun updateFailedStatus(

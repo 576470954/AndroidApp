@@ -25,14 +25,19 @@ data class MeasurementResult(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val measureId: Long, // 测量唯一标识
     val state: MeasureState = MeasureState.INITIALIZED,
+
     val deviceInstallationHeight: String,
     val controlPointId: Long,
     val monitoringStationInstallationHeight: String,
     val floorNumber: String,
     val pointNumber: String,
     val centerPointPairs: String,
+    val internalParameters: String = "",
+
     val rawData: String = "",
     val processDetail: String = "",
+    val heightResult: String = "",
     val result: String = "",
+
     val createTime: Long = System.currentTimeMillis()
 )

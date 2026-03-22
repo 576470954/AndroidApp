@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
 import com.example.mytestapplication.data.database.AppDatabase
 import com.example.mytestapplication.data.database.MeasurementResultDao
 import com.example.mytestapplication.data.database.SystemConfigDao
@@ -94,7 +95,7 @@ fun MeasureScreen(
     var currentSessionMeasureId by remember { mutableStateOf<Long?>(null) }
 
     // 设备设置状态
-    var deviceBaseUrl by remember { mutableStateOf("http://192.168.1.149:8000") }
+    var deviceBaseUrl by remember { mutableStateOf("http://192.168.1.149:8080") }
     val device = remember(deviceBaseUrl) { Device(deviceBaseUrl) }
     var showDeviceSettings by remember { mutableStateOf(false) }
     var deviceStateMessage by remember { mutableStateOf("") }
@@ -112,7 +113,7 @@ fun MeasureScreen(
     var isInternalExpanded by remember { mutableStateOf(false) }
     var rangeCalibration by remember { mutableStateOf("0") }
     var stationCalibrationH by remember { mutableStateOf("0") }
-    var shellWheelbaseCalibration by remember { mutableStateOf("75") }
+    var shellWheelbaseCalibration by remember { mutableStateOf("0.075") }
     var light2Calibration by remember { mutableStateOf("0") }
     var deviceWaitTime by remember { mutableStateOf("3") }
     var collectionCount by remember { mutableStateOf("1") }
@@ -120,7 +121,6 @@ fun MeasureScreen(
 
     var isFactoryEditable by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
-
     // 初始加载内部参数
     LaunchedEffect(Unit) {
         val config = withContext(Dispatchers.IO) { systemConfigDao.getConfig().first() }
@@ -156,20 +156,21 @@ fun MeasureScreen(
         if (distanceResult < 0) {
             ""
         } else {
-            val eqH = equipmentHeight.toDoubleOrNull() ?: 0.0
-            val swC = shellWheelbaseCalibration.toDoubleOrNull() ?: 0.0
-            val eqHReal = calculateEquipmentHeightOriginal(swC, eqH)
-            val stH = stationHeight.toDoubleOrNull() ?: 0.0
-            val rCal = rangeCalibration.toDoubleOrNull() ?: 0.0
-            val sCalH = stationCalibrationH.toDoubleOrNull() ?: 0.0
-            val l2Cal = light2Calibration.toDoubleOrNull() ?: 0.0
-
-            val targetH = eqHReal + selectedPointH + sCalH + distanceResult + rCal
+            val heights = calculateHeights(
+                equipmentHeight,
+                stationHeight,
+                selectedPointH,
+                rangeCalibration,
+                stationCalibrationH,
+                shellWheelbaseCalibration,
+                light2Calibration,
+                distanceResult
+            )
 
             val result = when (hLabel) {
-                "H(地面)" -> targetH - stH - sCalH
-                "H(墙面)" -> targetH - l2Cal
-                else -> targetH
+                "H(地面)" -> heights.groundH
+                "H(墙面)" -> heights.wallH
+                else -> heights.targetH
             }
             "%.3f".format(result)
         }
@@ -177,7 +178,7 @@ fun MeasureScreen(
 
 
     // 步进状态
-    var currentFloorProgress by remember { mutableIntStateOf(0) }
+    var currentFloorProgress by remember { mutableStateOf(0) }
     var floorOrderAsc by remember { mutableStateOf(true) }
     var floorInterval by remember { mutableStateOf("1") }
     var showFloorSettingsDialog by remember { mutableStateOf(false) }
@@ -205,6 +206,8 @@ fun MeasureScreen(
 
                     val coord = Gson().fromJson(currentTask.result, PointCoord::class.java)
                     if (coord != null) {
+                        xValue = "%.3f".format(coord.x)
+                        yValue = "%.3f".format(coord.y)
                         scope.launch {
                             val resp = device.drawCircle(
                                 x = coord.x.toInt(),
@@ -218,18 +221,7 @@ fun MeasureScreen(
                         Toast.makeText(context, "结果格式错误", Toast.LENGTH_SHORT).show()
                     }
 
-                    // 步进
-                    currentFloorProgress++
-                    if (currentFloorProgress >= (pointsPerFloor.toIntOrNull() ?: 4)) {
-                        currentFloorProgress = 0
-                        val nextF = (floorNumber.toIntOrNull() ?: 1) + (if (floorOrderAsc) 1 else -1) * (floorInterval.toIntOrNull() ?: 1)
-                        floorNumber = nextF.toString()
-                        pointNumber = "C1"
-                    } else {
-                        val prefix = pointNumber.takeWhile { !it.isDigit() }
-                        val suffix = (pointNumber.dropWhile { !it.isDigit() }.toIntOrNull() ?: 1) + (if (pointOrderAsc) 1 else -1) * (pointInterval.toIntOrNull() ?: 1)
-                        pointNumber = "$prefix$suffix"
-                    }
+
                 } catch (e: Exception) {
                     Toast.makeText(context, "解析结果失败", Toast.LENGTH_SHORT).show()
                 }
@@ -378,8 +370,27 @@ fun MeasureScreen(
             onDismissRequest = { showMeasureStateDialog = false },
             title = { Text("测量结果") },
             text = { Text("测量完成") },
-            confirmButton = { Button(onClick = { showMeasureStateDialog = false; // todo bujin
-             }) { Text("继续测量") } }
+            confirmButton = { Button(onClick = {
+                showMeasureStateDialog = false;
+                // 步进
+                currentFloorProgress++
+                if (currentFloorProgress >= (pointsPerFloor.toIntOrNull() ?: 4)) {
+                    currentFloorProgress = 0
+                    val nextF = (floorNumber.toIntOrNull() ?: 1) + (if (floorOrderAsc) 1 else -1) * (floorInterval.toIntOrNull() ?: 1)
+                    floorNumber = nextF.toString()
+                    pointNumber = "C1"
+                } else {
+                    val prefix = pointNumber.takeWhile { !it.isDigit() }
+                    val suffix = (pointNumber.dropWhile { !it.isDigit() }.toIntOrNull() ?: 1) + (if (pointOrderAsc) 1 else -1) * (pointInterval.toIntOrNull() ?: 1)
+                    pointNumber = "$prefix$suffix"
+                }
+                //
+                distanceResult = -1.0
+             }) { Text("测量下个点") } },
+
+            dismissButton = { Button(onClick = {
+                showMeasureStateDialog = false;
+            }) { Text("确定") } }
         )
     }
 
@@ -434,9 +445,9 @@ fun MeasureScreen(
             if (newEqH != null && newEqH < currentL) {
                 Toast.makeText(context, "光源站安装高小于壳体轴距标定值（见说明书附件B）", Toast.LENGTH_SHORT).show()
             }
-        }, "mm")
+        }, "m")
 
-        MeasureInputRow("监测站安装高*", stationHeight, { stationHeight = it }, "mm")
+        MeasureInputRow("监测站安装高*", stationHeight, { stationHeight = it }, "m")
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("控制点*:", Modifier.width(100.dp), fontSize = 16.sp)
@@ -475,18 +486,12 @@ fun MeasureScreen(
             }
             AnimatedVisibility(visible = isInternalExpanded) {
                 Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MeasureInputRow("测距校准值", rangeCalibration, { rangeCalibration = it }, "mm", enabled = isFactoryEditable)
-                    MeasureInputRow("监测站标定高", stationCalibrationH, { stationCalibrationH = it }, "mm", enabled = isFactoryEditable)
+                    MeasureInputRow("测距校准值", rangeCalibration, { rangeCalibration = it }, "m", enabled = isFactoryEditable)
+                    MeasureInputRow("监测站标定高", stationCalibrationH, { stationCalibrationH = it }, "m", enabled = isFactoryEditable)
                     MeasureInputRow("壳体轴距标定", shellWheelbaseCalibration, { newValue ->
-                        val newL = newValue.toDoubleOrNull()
-                        val currentEqH = equipmentHeight.toDoubleOrNull() ?: 0.0
-                        if (newL != null && newL > currentEqH) {
-                            Toast.makeText(context, "壳体轴距标定不能大于光源站安装高", Toast.LENGTH_SHORT).show()
-                        } else {
-                            shellWheelbaseCalibration = newValue
-                        }
-                    }, "mm", enabled = isFactoryEditable)
-                    MeasureInputRow("2号光源标定", light2Calibration, { light2Calibration = it }, "mm", enabled = isFactoryEditable)
+                        shellWheelbaseCalibration = newValue
+                    }, "m", enabled = isFactoryEditable)
+                    MeasureInputRow("2号光源标定", light2Calibration, { light2Calibration = it }, "m", enabled = isFactoryEditable)
                     MeasureInputRow("设备等待时间", deviceWaitTime, { deviceWaitTime = it }, "秒")
                     MeasureInputRow("采集次数", collectionCount, { collectionCount = it }, null)
                     MeasureInputRow("杂项去除数", miscRemovalCount, { val v = it.toIntOrNull() ?: 0; if (v < (collectionCount.toIntOrNull() ?: 1)) miscRemovalCount = it }, null)
@@ -569,7 +574,7 @@ fun MeasureScreen(
                         return@launch
                     }
                     if (stateResp.data?.isMeasuring != 0) {
-                        Toast.makeText(context, "设备测量中", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "开始测量失败，设备已处于测量中状态", Toast.LENGTH_LONG).show()
                         return@launch
                     }
 
@@ -580,6 +585,17 @@ fun MeasureScreen(
                     val currentPointToSave = pointNumber
                     val currentFloorToSave = floorNumber
 
+                    // 封装内部参数为 JSON
+                    val internalParamsJson = Gson().toJson(SystemConfig(
+                        rangeCalibration = rangeCalibration,
+                        stationCalibrationH = stationCalibrationH,
+                        shellWheelbaseCalibration = shellWheelbaseCalibration,
+                        light2Calibration = light2Calibration,
+                        deviceWaitTime = deviceWaitTime,
+                        collectionCount = collectionCount,
+                        miscRemovalCount = miscRemovalCount
+                    ))
+
                     val localId = withContext(Dispatchers.IO) {
                         measurementResultDao.insert(MeasurementResult(
                             measureId = measureId,
@@ -589,7 +605,8 @@ fun MeasureScreen(
                             monitoringStationInstallationHeight = stationHeight,
                             floorNumber = currentFloorToSave,
                             pointNumber = currentPointToSave,
-                            centerPointPairs = centerPointPairs
+                            centerPointPairs = centerPointPairs,
+                            internalParameters = internalParamsJson
                         ))
                     }
 
@@ -598,7 +615,22 @@ fun MeasureScreen(
                         measureId = measureId,
                     )
                     if (distanceResp.success) {
-                        distanceResult = distanceResp.distance_mm;
+                        distanceResult = distanceResp.distance_m;
+                        
+                        val heights = calculateHeights(
+                            equipmentHeight,
+                            stationHeight,
+                            selectedPointH,
+                            rangeCalibration,
+                            stationCalibrationH,
+                            shellWheelbaseCalibration,
+                            light2Calibration,
+                            distanceResult
+                        )
+                        val heightResultStr = "靶面:%.3f, 地面:%.3f, 墙面:%.3f".format(heights.targetH, heights.groundH, heights.wallH)
+                        withContext(Dispatchers.IO) {
+                            measurementResultDao.updateHeightResult(localId, heightResultStr)
+                        }
                     } else {
                         withContext(Dispatchers.IO) { measurementResultDao.updateState(localId, MeasureState.FAILED) }
                         Toast.makeText(context, "测距失败", Toast.LENGTH_LONG).show()
@@ -616,7 +648,7 @@ fun MeasureScreen(
 
                     if (response.status != "success") {
                         withContext(Dispatchers.IO) { measurementResultDao.updateState(localId, MeasureState.FAILED) }
-                        Toast.makeText(context, "启动失败: ${response.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "测量坐标失败: ${response.message}", Toast.LENGTH_LONG).show()
                     } else {
                         Toast.makeText(context, "测量已启动", Toast.LENGTH_SHORT).show()
                     }
@@ -739,4 +771,35 @@ fun calculateEquipmentHeightOriginal(shellWheelbaseCalibration: Double, equipmen
         - sqrt(equipmentHeight * equipmentHeight - shellWheelbaseCalibration * shellWheelbaseCalibration)
     }
 
+}
+
+data class HeightResultValues(
+    val targetH: Double,
+    val groundH: Double,
+    val wallH: Double
+)
+
+fun calculateHeights(
+    equipmentHeight: String,
+    stationHeight: String,
+    selectedPointH: Double,
+    rangeCalibration: String,
+    stationCalibrationH: String,
+    shellWheelbaseCalibration: String,
+    light2Calibration: String,
+    distanceResult: Double
+): HeightResultValues {
+    val eqH = equipmentHeight.toDoubleOrNull() ?: 0.0
+    val swC = shellWheelbaseCalibration.toDoubleOrNull() ?: 0.0
+    val eqHReal = calculateEquipmentHeightOriginal(swC, eqH)
+    val stH = stationHeight.toDoubleOrNull() ?: 0.0
+    val rCal = rangeCalibration.toDoubleOrNull() ?: 0.0
+    val sCalH = stationCalibrationH.toDoubleOrNull() ?: 0.0
+    val l2Cal = light2Calibration.toDoubleOrNull() ?: 0.0
+
+    val targetH = eqHReal + selectedPointH + sCalH + distanceResult + rCal
+    val groundH = targetH - stH - sCalH
+    val wallH = targetH - l2Cal
+
+    return HeightResultValues(targetH, groundH, wallH)
 }
