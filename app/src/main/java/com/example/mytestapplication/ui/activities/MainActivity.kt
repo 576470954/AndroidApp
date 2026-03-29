@@ -86,6 +86,7 @@ private fun navigateToEditProject(context: Context, project: Project) {
 
 private fun navigateToOperation(context: Context, project: Project) {
     val intent = Intent(context, OperationActivity::class.java).apply {
+        putExtra("PROJECT_ID", project.id)
         putExtra("PROJECT_NAME", project.name)
     }
     context.startActivity(intent)

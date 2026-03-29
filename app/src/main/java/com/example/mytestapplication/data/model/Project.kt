@@ -10,6 +10,7 @@ data class Project(
     val name: String,
     val admin: String = "",
     val description: String,
+    val deviceUrl: String = "http://192.168.1.149:8080",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

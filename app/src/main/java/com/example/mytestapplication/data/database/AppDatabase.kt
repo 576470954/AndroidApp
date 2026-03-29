@@ -10,7 +10,7 @@ import com.example.mytestapplication.data.model.ControlPoint
 import com.example.mytestapplication.data.model.MeasurementResult
 import com.example.mytestapplication.data.model.SystemConfig
 
-@Database(entities = [Project::class, ControlPoint::class, MeasurementResult::class, SystemConfig::class], version = 11, exportSchema = false)
+@Database(entities = [Project::class, ControlPoint::class, MeasurementResult::class, SystemConfig::class], version = 13, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun projectDao(): ProjectDao
