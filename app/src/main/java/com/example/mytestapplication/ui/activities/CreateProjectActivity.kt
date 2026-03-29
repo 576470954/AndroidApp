@@ -5,6 +5,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -52,7 +54,7 @@ class CreateProjectActivity : ComponentActivity() {
 
 @Composable
 fun CreateProjectScreen(
-    projectDao: ProjectDao, 
+    projectDao: ProjectDao,
     onSave: (String, String, String, String) -> Unit,
     onBack: () -> Unit
 ) {
@@ -75,6 +77,7 @@ fun CreateProjectScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
+            .verticalScroll(rememberScrollState())
             .systemBarsPadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -85,10 +88,10 @@ fun CreateProjectScreen(
         OutlinedTextField(value = projectName, onValueChange = { projectName = it }, label = { Text("名称*") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = adminName, onValueChange = { adminName = it }, label = { Text("管理员") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(
-            value = projectDescription, 
-            onValueChange = { if (it.length <= 400) projectDescription = it }, 
-            label = { Text("描述 (最多400字)") }, 
-            modifier = Modifier.fillMaxWidth().weight(1f), 
+            value = projectDescription,
+            onValueChange = { if (it.length <= 400) projectDescription = it },
+            label = { Text("描述 (最多400字)") },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp),
             minLines = 10
         )
 
