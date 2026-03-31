@@ -210,8 +210,8 @@ fun MeasureScreen(
     // 监听测量结果，仅处理当前会话的任务
     LaunchedEffect(allResults, currentSessionMeasureId) {
         if (currentSessionMeasureId == null) {
-            xValue = ""
-            yValue = ""
+            // 这里原本会在重置时清空坐标，但由于用户希望坐标不随测量结果变化，
+            // 且通常在选择控制点时已填入，保持其不变可能是更合理的解读。
             return@LaunchedEffect
         }
 
@@ -224,8 +224,7 @@ fun MeasureScreen(
                     val coord = Gson().fromJson(currentTask.result, PointCoord::class.java)
                     val internalParams = Gson().fromJson(currentTask.internalParameters, SystemConfig::class.java)
                     if (coord != null) {
-                        xValue = "%.3f".format(coord.x)
-                        yValue = "%.3f".format(coord.y)
+                        // 测量结果仅用于绘制 circle，不再更新 xValue 和 yValue
                         scope.launch {
                             val resp = device.drawCircle(
                                 x = coord.x.toInt(),
