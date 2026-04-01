@@ -301,24 +301,6 @@ fun MeasureScreen(
             text = { Text("测量完成") },
             confirmButton = { Button(onClick = {
                 showMeasureStateDialog = false
-                // 步进
-                currentFloorProgress++
-                if (currentFloorProgress >= (pointsPerFloor.toIntOrNull() ?: 4)) {
-                    currentFloorProgress = 0
-                    val nextF = (floorNumber.toIntOrNull() ?: 1) + (if (floorOrderAsc) 1 else -1) * (floorInterval.toIntOrNull() ?: 1)
-                    floorNumber = nextF.toString()
-                    pointNumber = "C1"
-                } else {
-                    val prefix = pointNumber.takeWhile { !it.isDigit() }
-                    val suffix = (pointNumber.dropWhile { !it.isDigit() }.toIntOrNull() ?: 1) + (if (pointOrderAsc) 1 else -1) * (pointInterval.toIntOrNull() ?: 1)
-                    pointNumber = "$prefix$suffix"
-                }
-                //
-                distanceResult = -1.0
-             }) { Text("测量下个点") } },
-
-            dismissButton = { Button(onClick = {
-                showMeasureStateDialog = false
             }) { Text("确定") } }
         )
     }
@@ -494,7 +476,23 @@ fun MeasureScreen(
             }
         }
 
-        BottomActionRow(onBack, {
+        BottomActionRow(onBack,{
+            // 步进
+            currentFloorProgress++
+            if (currentFloorProgress >= (pointsPerFloor.toIntOrNull() ?: 4)) {
+                currentFloorProgress = 0
+                val nextF = (floorNumber.toIntOrNull() ?: 1) + (if (floorOrderAsc) 1 else -1) * (floorInterval.toIntOrNull() ?: 1)
+                floorNumber = nextF.toString()
+                pointNumber = "C1"
+            } else {
+                val prefix = pointNumber.takeWhile { !it.isDigit() }
+                val suffix = (pointNumber.dropWhile { !it.isDigit() }.toIntOrNull() ?: 1) + (if (pointOrderAsc) 1 else -1) * (pointInterval.toIntOrNull() ?: 1)
+                pointNumber = "$prefix$suffix"
+            }
+            //
+            distanceResult = -1.0
+        },
+            {
             if (equipmentHeight.isBlank() || selectedPointId == null || floorNumber.isBlank() || pointNumber.isBlank()) {
                 Toast.makeText(context, "请填完必填项", Toast.LENGTH_SHORT).show()
             } else {
@@ -603,7 +601,8 @@ fun MeasureScreen(
                     }
                 }
             }
-        }, measureCountInput, { measureCountInput = it })
+        },
+            measureCountInput, { measureCountInput = it })
     }
 }
 
@@ -668,9 +667,10 @@ fun MeasureDropdownRow(
 }
 
 @Composable
-fun BottomActionRow(onBack: () -> Unit, onMeasure: () -> Unit, count: String, onCountChange: (String) -> Unit) {
+fun BottomActionRow(onBack: () -> Unit, onNext: () -> Unit, onMeasure: () -> Unit, count: String, onCountChange: (String) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Button(onBack, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("返回", fontSize = 12.sp, maxLines = 1) }
+        Button(onNext, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("下个点", fontSize = 12.sp, maxLines = 1) }
         Button(onMeasure, Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("测量", fontSize = 12.sp, maxLines = 1) }
         OutlinedTextField(count, onCountChange, Modifier.weight(0.7f), label = { Text("次数", fontSize = 11.sp) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
     }
