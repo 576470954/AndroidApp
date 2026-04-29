@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.mytestapplication"
+    namespace = "cn.latlaser.coordinate"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.mytestapplication"
+        applicationId = "cn.latlaser.coordinate"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

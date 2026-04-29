@@ -1,0 +1,14 @@
+package cn.latlaser.coordinate.data.database
+
+import androidx.room.*
+import cn.latlaser.coordinate.data.model.SystemConfig
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface SystemConfigDao {
+    @Query("SELECT * FROM system_configs WHERE id = 1")
+    fun getConfig(): Flow<SystemConfig?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveConfig(config: SystemConfig)
+}
